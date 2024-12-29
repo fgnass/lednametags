@@ -56,9 +56,9 @@ function isPixelOn(data, i) {
   return data[i] > 240; // Only consider nearly white pixels
 }
 
-// Function to find most common transition distance
+// Function to find smallest transition distance
 function findSmallestTransition(imageData, minX, maxX, minY, maxY) {
-  const distances = new Map(); // Map to count occurrences of each distance
+  let smallestDistance = Infinity;
 
   // Scan horizontal transitions
   for (let y = minY; y <= maxY; y++) {
@@ -72,8 +72,8 @@ function findSmallestTransition(imageData, minX, maxX, minY, maxY) {
       if (value !== lastValue) {
         if (lastTransition !== -1) {
           const distance = x - lastTransition;
-          if (distance > 1) {
-            distances.set(distance, (distances.get(distance) || 0) + 1);
+          if (distance > 1 && distance < smallestDistance) {
+            smallestDistance = distance;
           }
         }
         lastTransition = x;
@@ -94,8 +94,8 @@ function findSmallestTransition(imageData, minX, maxX, minY, maxY) {
       if (value !== lastValue) {
         if (lastTransition !== -1) {
           const distance = y - lastTransition;
-          if (distance > 1) {
-            distances.set(distance, (distances.get(distance) || 0) + 1);
+          if (distance > 1 && distance < smallestDistance) {
+            smallestDistance = distance;
           }
         }
         lastTransition = y;
@@ -104,27 +104,10 @@ function findSmallestTransition(imageData, minX, maxX, minY, maxY) {
     }
   }
 
-  // Find the most common distance that occurs at least 3 times
-  let mostCommonDistance = Infinity;
-  let maxCount = 0;
+  // Log all transitions for debugging
+  console.log("Smallest transition distance:", smallestDistance);
 
-  for (const [distance, count] of distances.entries()) {
-    if (count >= 3 && count > maxCount) {
-      mostCommonDistance = distance;
-      maxCount = count;
-    }
-  }
-
-  // Log all distances for debugging
-  console.log(
-    "Transition distances:",
-    Array.from(distances.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([d, c]) => `${d}px: ${c}x`)
-      .join(", ")
-  );
-
-  return mostCommonDistance;
+  return smallestDistance;
 }
 
 // Function to check if a cell is completely filled
