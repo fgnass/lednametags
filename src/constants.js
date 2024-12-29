@@ -10,6 +10,12 @@ export const DisplayMode = {
   CURTAIN: 8,
 };
 
+// Speed to FPS mapping (array index is the speed - 1)
+export const SPEED_FPS = [1.2, 1.3, 2.0, 2.4, 2.8, 4.5, 7.5, 15];
+
+// Speed labels for UI
+export const SPEED_LABELS = SPEED_FPS.map((fps) => `${fps} fps`);
+
 export const Brightness = {
   PERCENT_25: 0x40,
   PERCENT_50: 0x20,

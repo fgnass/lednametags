@@ -1,5 +1,5 @@
 import { currentBankData, setText, setFont } from "../store";
-import { availableFonts } from "../fonts";
+import { fonts } from "../fonts";
 
 export default function TextTool() {
   return (
@@ -17,9 +17,9 @@ export default function TextTool() {
           onChange={e => setFont(e.target.value)}
           class="px-4 py-3 bg-gray-800 rounded-lg text-lg"
         >
-          {availableFonts.map(font => (
-            <option key={font.name} value={font.name}>
-              {font.name}
+          {fonts.map(font => (
+            <option key={font} value={font}>
+              {font}
             </option>
           ))}
         </select>

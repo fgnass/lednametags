@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@preact/signals": "^1.2.2",
+    "lucide-preact": "^0.469.0",
     "msdf-bmfont-xml": "^2.7.0",
     "preact": "^10.19.3"
   },
