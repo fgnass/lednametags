@@ -62,7 +62,7 @@ export const currentChar = signal("X");
 
 // Function to check if a pixel is "on" (avoid anti-aliasing artifacts)
 function isPixelOn(data, i) {
-  return data[i] > 240; // Only consider nearly white pixels
+  return data[i] > 90; // Only consider nearly white pixels
 }
 
 // Function to find smallest transition distance
@@ -262,7 +262,7 @@ function renderTestChar(fontName, text = "X") {
   const widthInCells = maxCellX - minCellX + 1;
   const heightInCells = maxCellY - minCellY + 1;
 
-  console.log(`${fontName} "${text}": ${widthInCells}x${heightInCells} cells`);
+  //console.log(`${fontName} "${text}": ${widthInCells}x${heightInCells} cells`);
 
   // Return all the data we gathered
   return {
@@ -318,24 +318,10 @@ function getCharPixels(char, fontName) {
   const data = renderTestChar(fontName, char);
   const { widthInCells, heightInCells, cells, minCellX, minCellY } = data;
 
-  // Create pixel array
-  const pixels = Array(heightInCells)
-    .fill()
-    .map(() => Array(widthInCells).fill(false));
-
-  // Fill pixel array from cells
-  for (const cellKey of cells) {
-    const [x, y] = cellKey.split(",").map(Number);
-    const cellX = x - minCellX;
-    const cellY = y - minCellY;
-    pixels[cellY][cellX] = true;
-  }
-
   // If character is too tall, render it scaled down
   if (heightInCells > 11) {
-    // Calculate scaled font size
-    const scale = heightInCells / 11;
-    const fontSize = Math.floor(160 / scale);
+    // Find the right font size to make it 11px tall
+    const fontSize = findFontSizeForTargetHeight(fontName, char, 11);
 
     // Draw scaled version
     scaledCtx.fillStyle = "black";
@@ -372,58 +358,37 @@ function getCharPixels(char, fontName) {
       }
     }
 
-    // Detect grid size for scaled version
-    const gridSize = detectGrid(imageData, minX, maxX, minY, maxY);
+    // Create pixel array directly from image data
+    const width = maxX - minX + 1;
+    const height = maxY - minY + 1;
+    const pixels = Array(height)
+      .fill()
+      .map(() => Array(width).fill(false));
 
-    // Collect cells from scaled version
-    const scaledCells = new Set();
-    for (let y = minY; y <= maxY; y += gridSize) {
-      for (let x = minX; x <= maxX; x += gridSize) {
-        const centerX = x + Math.floor(gridSize / 2);
-        const centerY = y + Math.floor(gridSize / 2);
-        const i = (centerY * scaledCanvas.width + centerX) * 4;
-        if (isPixelOn(imageData.data, i)) {
-          const cellX = Math.floor(x / gridSize);
-          const cellY = Math.floor(y / gridSize);
-          scaledCells.add(`${cellX},${cellY}`);
-        }
+    // Fill pixel array directly from image data
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = ((y + minY) * scaledCanvas.width + (x + minX)) * 4;
+        pixels[y][x] = isPixelOn(imageData.data, i);
       }
     }
 
-    // Find cell bounds
-    let minCellX = Infinity,
-      maxCellX = -Infinity;
-    let minCellY = Infinity,
-      maxCellY = -Infinity;
-
-    for (const cellKey of scaledCells) {
-      const [x, y] = cellKey.split(",").map(Number);
-      minCellX = Math.min(minCellX, x);
-      maxCellX = Math.max(maxCellX, x);
-      minCellY = Math.min(minCellY, y);
-      maxCellY = Math.max(maxCellY, y);
-    }
-
-    // Calculate dimensions
-    const scaledWidthInCells = maxCellX - minCellX + 1;
-    const scaledHeightInCells = maxCellY - minCellY + 1;
-
-    // Create pixel array from scaled version
-    const scaledPixels = Array(scaledHeightInCells)
-      .fill()
-      .map(() => Array(scaledWidthInCells).fill(false));
-
-    // Fill pixel array from cells
-    for (const cellKey of scaledCells) {
-      const [x, y] = cellKey.split(",").map(Number);
-      const cellX = x - minCellX;
-      const cellY = y - minCellY;
-      scaledPixels[cellY][cellX] = true;
-    }
-
-    const charData = { pixels: scaledPixels, width: scaledWidthInCells };
+    const charData = { pixels, width };
     charCache.set(key, charData);
     return charData;
+  }
+
+  // For non-scaled characters, create pixel array from original data
+  const pixels = Array(heightInCells)
+    .fill()
+    .map(() => Array(widthInCells).fill(false));
+
+  // Fill pixel array from cells
+  for (const cellKey of cells) {
+    const [x, y] = cellKey.split(",").map(Number);
+    const cellX = x - minCellX;
+    const cellY = y - minCellY;
+    pixels[cellY][cellX] = true;
   }
 
   const charData = { pixels, width: widthInCells };
@@ -535,3 +500,65 @@ Promise.all(fontLoadingPromises).then((loadedFonts) => {
     setFont(loadedFonts[0]);
   }
 });
+
+// Function to find font size that makes X match target height
+function findFontSizeForTargetHeight(fontName, char, targetHeight) {
+  // Start with a reasonable size
+  let fontSize = 30;
+  let lastHeight = 0;
+  let iterations = 0;
+  const maxIterations = 10;
+
+  while (iterations < maxIterations) {
+    // Draw character with current font size
+    scaledCtx.fillStyle = "black";
+    scaledCtx.fillRect(0, 0, scaledCanvas.width, scaledCanvas.height);
+    scaledCtx.fillStyle = "white";
+    scaledCtx.font = `${fontSize}px "${fontName}"`;
+    scaledCtx.textBaseline = "alphabetic";
+    scaledCtx.textAlign = "left";
+    scaledCtx.fillText(char, 20, Math.round(scaledCanvas.height * 0.7));
+
+    // Get image data and find bounds
+    const imageData = scaledCtx.getImageData(
+      0,
+      0,
+      scaledCanvas.width,
+      scaledCanvas.height
+    );
+    let minY = scaledCanvas.height;
+    let maxY = 0;
+
+    for (let y = 0; y < scaledCanvas.height; y++) {
+      for (let x = 0; x < scaledCanvas.width; x++) {
+        const i = (y * scaledCanvas.width + x) * 4;
+        if (isPixelOn(imageData.data, i)) {
+          minY = Math.min(minY, y);
+          maxY = Math.max(maxY, y);
+        }
+      }
+    }
+
+    const height = maxY - minY + 1;
+    console.log(`Font size ${fontSize}px -> height ${height}px`);
+
+    // Check if we hit the target
+    if (height === targetHeight) {
+      return fontSize;
+    }
+
+    // Adjust font size proportionally
+    const newFontSize = Math.round(fontSize * (targetHeight / height));
+
+    // If we're oscillating or not making progress, exit
+    if (newFontSize === fontSize || newFontSize === lastHeight) {
+      return fontSize;
+    }
+
+    lastHeight = fontSize;
+    fontSize = newFontSize;
+    iterations++;
+  }
+
+  return fontSize;
+}
