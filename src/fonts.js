@@ -56,9 +56,9 @@ function isPixelOn(data, i) {
   return data[i] > 240; // Only consider nearly white pixels
 }
 
-// Function to find most common transition distance
+// Function to find smallest transition distance
 function findSmallestTransition(imageData, minX, maxX, minY, maxY) {
-  const distances = new Map(); // Map to count occurrences of each distance
+  let smallestDistance = Infinity;
 
   // Scan horizontal transitions
   for (let y = minY; y <= maxY; y++) {
@@ -72,8 +72,8 @@ function findSmallestTransition(imageData, minX, maxX, minY, maxY) {
       if (value !== lastValue) {
         if (lastTransition !== -1) {
           const distance = x - lastTransition;
-          if (distance > 1) {
-            distances.set(distance, (distances.get(distance) || 0) + 1);
+          if (distance >= 4 && distance < smallestDistance) {
+            smallestDistance = distance;
           }
         }
         lastTransition = x;
@@ -94,8 +94,8 @@ function findSmallestTransition(imageData, minX, maxX, minY, maxY) {
       if (value !== lastValue) {
         if (lastTransition !== -1) {
           const distance = y - lastTransition;
-          if (distance > 1) {
-            distances.set(distance, (distances.get(distance) || 0) + 1);
+          if (distance >= 4 && distance < smallestDistance) {
+            smallestDistance = distance;
           }
         }
         lastTransition = y;
@@ -104,27 +104,7 @@ function findSmallestTransition(imageData, minX, maxX, minY, maxY) {
     }
   }
 
-  // Find the most common distance that occurs at least 3 times
-  let mostCommonDistance = Infinity;
-  let maxCount = 0;
-
-  for (const [distance, count] of distances.entries()) {
-    if (count >= 3 && count > maxCount) {
-      mostCommonDistance = distance;
-      maxCount = count;
-    }
-  }
-
-  // Log all distances for debugging
-  console.log(
-    "Transition distances:",
-    Array.from(distances.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([d, c]) => `${d}px: ${c}x`)
-      .join(", ")
-  );
-
-  return mostCommonDistance;
+  return smallestDistance;
 }
 
 // Function to check if a cell is completely filled
@@ -157,7 +137,6 @@ function isCellEmpty(imageData, startX, startY, size) {
 function detectGrid(imageData, minX, maxX, minY, maxY) {
   // Find initial grid size from smallest transition
   let gridSize = findSmallestTransition(imageData, minX, maxX, minY, maxY);
-  console.log("Initial grid size from transitions:", gridSize);
 
   // If no transitions found, estimate grid size from bounds
   if (gridSize === Infinity) {
@@ -165,42 +144,6 @@ function detectGrid(imageData, minX, maxX, minY, maxY) {
     const height = maxY - minY + 1;
     // Try to fit the height into roughly 11 pixels
     gridSize = Math.max(Math.floor(height / 11), 1);
-    console.log("Estimated grid size from bounds:", gridSize);
-  }
-
-  // Verify grid by checking cells
-  let hasPartialCells = false;
-
-  // Check each cell in the grid
-  for (let y = minY; y <= maxY - gridSize && !hasPartialCells; y += gridSize) {
-    for (
-      let x = minX;
-      x <= maxX - gridSize && !hasPartialCells;
-      x += gridSize
-    ) {
-      // Skip if cell is completely filled or empty
-      if (
-        isCellFilled(imageData, x, y, gridSize) ||
-        isCellEmpty(imageData, x, y, gridSize)
-      ) {
-        continue;
-      }
-
-      // Found a partial cell - look for transitions within it
-      hasPartialCells = true;
-
-      // Look for smallest transition within this cell
-      const cellTransition = findSmallestTransition(
-        imageData,
-        x,
-        x + gridSize,
-        y,
-        y + gridSize
-      );
-      if (cellTransition < gridSize && cellTransition !== Infinity) {
-        gridSize = cellTransition;
-      }
-    }
   }
 
   return gridSize;
@@ -295,6 +238,18 @@ function renderTestChar(fontName, text = "X") {
     ctx.lineTo(canvas.width, y + 0.5);
   }
   ctx.stroke();
+
+  // Draw sampled points
+  for (let y = minY; y <= maxY; y += gridSize) {
+    for (let x = minX; x <= maxX; x += gridSize) {
+      const centerX = x + Math.floor(gridSize / 2);
+      const centerY = y + Math.floor(gridSize / 2);
+      const i = (centerY * canvas.width + centerX) * 4;
+
+      ctx.fillStyle = isPixelOn(imageData.data, i) ? "lime" : "red";
+      ctx.fillRect(centerX - 1, centerY - 1, 3, 3);
+    }
+  }
 }
 
 // Export function to update current font
@@ -360,7 +315,7 @@ function getFontMetrics(fontName) {
 
   // Detect grid size from X
   const gridSize = detectGrid(imageData, minX, maxX, minY, maxY);
-  console.log(`Font ${fontName} grid size from X: ${gridSize}px`);
+  console.log(`Font ${fontName}: ${gridSize}px grid`);
 
   fontMetricsCache.set(fontName, gridSize);
   return gridSize;
@@ -420,25 +375,19 @@ function getCharPixels(char, fontName) {
     return emptyData;
   }
 
-  console.log(`Raw bounds for "${char}": x=${minX}-${maxX}, y=${minY}-${maxY}`);
-
   // Find the grid cells that contain pixels by sampling their centers
   const cells = new Set(); // Store occupied cell coordinates as "x,y"
 
-  for (let y = minY; y <= maxY; y++) {
-    for (let x = minX; x <= maxX; x++) {
+  for (let y = minY; y <= maxY; y += gridSize) {
+    for (let x = minX; x <= maxX; x += gridSize) {
       const cellX = Math.floor(x / gridSize);
       const cellY = Math.floor(y / gridSize);
-      const centerX = cellX * gridSize + Math.floor(gridSize / 2);
-      const centerY = cellY * gridSize + Math.floor(gridSize / 2);
+      const centerX = x + Math.floor(gridSize / 2);
+      const centerY = y + Math.floor(gridSize / 2);
+      const i = (centerY * charCanvas.width + centerX) * 4;
 
-      // Only check the center of each cell once
-      const cellKey = `${cellX},${cellY}`;
-      if (!cells.has(cellKey)) {
-        const i = (centerY * charCanvas.width + centerX) * 4;
-        if (isPixelOn(imageData.data, i)) {
-          cells.add(cellKey);
-        }
+      if (isPixelOn(imageData.data, i)) {
+        cells.add(`${cellX},${cellY}`);
       }
     }
   }
@@ -457,7 +406,7 @@ function getCharPixels(char, fontName) {
     maxCellY = Math.max(maxCellY, y);
   }
 
-  // Calculate dimensions from occupied cells
+  // Calculate dimensions from occupied cells (max - min, no +1)
   const widthInCells = maxCellX - minCellX + 1;
   const heightInCells = maxCellY - minCellY + 1;
 
@@ -467,18 +416,7 @@ function getCharPixels(char, fontName) {
   const snappedMinY = minCellY * gridSize;
   const snappedMaxY = (maxCellY + 1) * gridSize;
 
-  console.log(`Grid cells: ${minCellX}-${maxCellX} x ${minCellY}-${maxCellY}`);
-  console.log(
-    `Snapped bounds: x=${snappedMinX}-${snappedMaxX}, y=${snappedMinY}-${snappedMaxY}`
-  );
-  console.log(
-    `Char "${char}": ${widthInCells}x${heightInCells} cells (grid: ${gridSize}px)`
-  );
-
-  minX = snappedMinX;
-  maxX = snappedMaxX;
-  minY = snappedMinY;
-  maxY = snappedMaxY;
+  console.log(`${fontName} "${char}": ${widthInCells}x${heightInCells} cells`);
 
   // Create pixel array
   const pixels = Array(heightInCells)
