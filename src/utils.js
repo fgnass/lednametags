@@ -1,24 +1,34 @@
 import { DisplayMode } from "./constants";
 
-// Convert frames to device format (each byte represents 8 vertical pixels)
-export function framesToDeviceFormat(frames) {
-  const result = new Uint8Array(frames.length * 11 * 6); // 11 rows × 6 bytes per row
+// Convert pixel data to device format (column-wise bytes)
+export function framesToDeviceFormat(bank) {
+  // For animation mode, we need complete frames
+  const width =
+    bank.mode === DisplayMode.ANIMATION
+      ? Math.ceil(bank.pixels[0].length / 44) * 44 // Round up to complete frames
+      : bank.pixels[0].length;
 
-  frames.forEach((frame, frameIndex) => {
-    const frameOffset = frameIndex * 11 * 6;
+  const columns = Math.ceil(width / 8);
+  const result = new Uint8Array(columns * 11); // Each column needs 11 bytes
 
-    for (let x = 0; x < 44; x++) {
-      const byteIndex = Math.floor(x / 8);
-      const bitPosition = 7 - (x % 8);
+  // Process each column (of 8 pixels width)
+  for (let col = 0; col < columns; col++) {
+    const colOffset = col * 11;
+    const pixelX = col * 8;
 
-      for (let y = 0; y < 11; y++) {
-        if (frame[y][x]) {
-          const index = frameOffset + byteIndex * 11 + y;
-          result[index] |= 1 << bitPosition;
+    // Fill 11 bytes for this column
+    for (let y = 0; y < 11; y++) {
+      let byte = 0;
+      // Pack 8 horizontal pixels into one byte
+      for (let bit = 0; bit < 8; bit++) {
+        const x = pixelX + bit;
+        if (x < bank.pixels[0].length && bank.pixels[y][x]) {
+          byte |= 1 << (7 - bit);
         }
       }
+      result[colOffset + y] = byte;
     }
-  });
+  }
 
   return result;
 }
@@ -32,7 +42,7 @@ export function createHeader({
   ants = false,
   messageLengths = [5],
 } = {}) {
-  const header = new Uint8Array(64);
+  const header = new Uint8Array(32); // Header is actually 32 bytes, not 64
 
   // Magic bytes
   header[0] = 0x77;
@@ -65,3 +75,40 @@ export function createHeader({
 
   return header;
 }
+
+// Calculate memory usage for a bank
+export function calculateBankMemory(bank) {
+  // Header is 32 bytes
+  let bytes = 32;
+
+  // Find the rightmost used pixel
+  let maxX = 0;
+  for (let y = 0; y < bank.pixels.length; y++) {
+    for (let x = bank.pixels[y].length - 1; x >= 0; x--) {
+      if (bank.pixels[y][x]) {
+        maxX = Math.max(maxX, x);
+        break;
+      }
+    }
+  }
+
+  // Calculate number of 8-pixel columns needed
+  const columns = Math.ceil((maxX + 1) / 8);
+
+  // Each column needs 11 bytes (one byte per row)
+  bytes += columns * 11;
+
+  return bytes;
+}
+
+// Calculate total memory usage for all banks
+export function calculateTotalMemory(banks) {
+  return banks.reduce(
+    (total, bank) => total + calculateBankMemory(bank.value),
+    0
+  );
+}
+
+// Memory constants
+export const DEVICE_MEMORY = 4096; // 4K
+export const MAX_CHARS = 750;

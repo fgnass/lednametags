@@ -1,6 +1,7 @@
 import { signal, computed } from "@preact/signals";
 import { DisplayMode, SPEED_FPS } from "./constants";
 import { textToPixels, fonts } from "./fonts";
+import { calculateBankMemory, DEVICE_MEMORY } from "./utils";
 
 // Bank data structure
 function createBank() {
@@ -192,6 +193,20 @@ function stopPlayback() {
 // Computed values
 export const currentBankData = computed(() => banks[currentBank.value].value);
 
+export const bankHasData = computed(() =>
+  banks.map((bank) => {
+    const data = bank.value;
+    return (
+      data.pixels.some((row) => row.some((pixel) => pixel)) ||
+      Boolean(data.text.trim())
+    );
+  })
+);
+
+export const bankMemory = computed(() =>
+  banks.map((bank) => calculateBankMemory(bank.value))
+);
+
 export const currentFrame = computed(() => {
   const bank = currentBankData.value;
 
@@ -284,7 +299,7 @@ export function setFont(font) {
 
 export function clearImage() {
   const bank = banks[currentBank.value];
-  const data = { ...bank.value };
+  const data = { ...bank.value, text: "" }; // Clear text as well
 
   if (data.mode === DisplayMode.ANIMATION) {
     // Clear just the current frame
@@ -301,6 +316,7 @@ export function clearImage() {
     data.pixels = Array(11)
       .fill()
       .map(() => Array(88).fill(false));
+    data.viewport = 0; // Reset viewport to 0
   }
 
   bank.value = data;
@@ -414,3 +430,15 @@ export function deleteFrame() {
 
   bank.value = data;
 }
+
+// Memory stats
+export const memoryUsage = computed(() => {
+  return banks.reduce(
+    (total, bank) => total + calculateBankMemory(bank.value),
+    0
+  );
+});
+
+export const memoryPercent = computed(() => {
+  return Math.round((memoryUsage.value / DEVICE_MEMORY) * 100);
+});
