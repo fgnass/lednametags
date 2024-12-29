@@ -11,12 +11,6 @@ canvas.style.cssText =
   "position: fixed; bottom: 20px; right: 20px; background: #000; border: 1px solid #333; image-rendering: pixelated;";
 document.body.appendChild(canvas);
 
-// Create a second canvas for character analysis
-const charCanvas = document.createElement("canvas");
-const charCtx = charCanvas.getContext("2d", { willReadFrequently: true });
-charCanvas.width = 200;
-charCanvas.height = 200;
-
 // Ensure crisp rendering
 ctx.imageSmoothingEnabled = false;
 ctx.textRendering = "geometricPrecision";
@@ -107,32 +101,6 @@ function findSmallestTransition(imageData, minX, maxX, minY, maxY) {
   return smallestDistance;
 }
 
-// Function to check if a cell is completely filled
-function isCellFilled(imageData, startX, startY, size) {
-  for (let y = startY; y < startY + size; y++) {
-    for (let x = startX; x < startX + size; x++) {
-      const i = (y * canvas.width + x) * 4;
-      if (!isPixelOn(imageData.data, i)) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
-// Function to check if a cell is completely empty
-function isCellEmpty(imageData, startX, startY, size) {
-  for (let y = startY; y < startY + size; y++) {
-    for (let x = startX; x < startX + size; x++) {
-      const i = (y * canvas.width + x) * 4;
-      if (isPixelOn(imageData.data, i)) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
 // Function to detect pixel grid
 function detectGrid(imageData, minX, maxX, minY, maxY) {
   // Find initial grid size from smallest transition
@@ -147,35 +115,6 @@ function detectGrid(imageData, minX, maxX, minY, maxY) {
   }
 
   return gridSize;
-}
-
-// Function to detect occupied cells in a character
-function detectOccupiedCells(
-  imageData,
-  minX,
-  maxX,
-  minY,
-  maxY,
-  gridSize,
-  canvasWidth
-) {
-  const cells = new Set();
-
-  // Draw sampled points and collect occupied cells
-  for (let y = minY; y <= maxY; y += gridSize) {
-    for (let x = minX; x <= maxX; x += gridSize) {
-      const centerX = x + Math.floor(gridSize / 2);
-      const centerY = y + Math.floor(gridSize / 2);
-      const i = (centerY * canvasWidth + centerX) * 4;
-
-      if (isPixelOn(imageData.data, i)) {
-        const cellX = Math.floor(x / gridSize);
-        const cellY = Math.floor(y / gridSize);
-        cells.add(`${cellX},${cellY}`);
-      }
-    }
-  }
-  return cells;
 }
 
 // Function to render test character with current font and return cell data
