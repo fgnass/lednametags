@@ -11,12 +11,27 @@ canvas.style.cssText =
   "position: fixed; bottom: 20px; right: 20px; background: #000; border: 1px solid #333; image-rendering: pixelated;";
 document.body.appendChild(canvas);
 
+// Create second canvas for scaled preview
+const scaledCanvas = document.createElement("canvas");
+const scaledCtx = scaledCanvas.getContext("2d", { willReadFrequently: true });
+scaledCanvas.width = 200;
+scaledCanvas.height = 200;
+scaledCanvas.style.cssText =
+  "position: fixed; bottom: 20px; right: 240px; background: #000; border: 1px solid #333; image-rendering: pixelated;";
+document.body.appendChild(scaledCanvas);
+
 // Ensure crisp rendering
 ctx.imageSmoothingEnabled = false;
 ctx.textRendering = "geometricPrecision";
 ctx.fontKerning = "none";
 ctx.fontStretch = "normal";
 ctx.letterSpacing = "0px";
+
+scaledCtx.imageSmoothingEnabled = true;
+scaledCtx.textRendering = "geometricPrecision";
+scaledCtx.fontKerning = "none";
+scaledCtx.fontStretch = "normal";
+scaledCtx.letterSpacing = "0px";
 
 // Get all TTF files from /public/fonts
 const fontFiles = import.meta.glob("/public/fonts/*.{ttf,otf,woff2}", {
@@ -314,6 +329,101 @@ function getCharPixels(char, fontName) {
     const cellX = x - minCellX;
     const cellY = y - minCellY;
     pixels[cellY][cellX] = true;
+  }
+
+  // If character is too tall, render it scaled down
+  if (heightInCells > 11) {
+    // Calculate scaled font size
+    const scale = heightInCells / 11;
+    const fontSize = Math.floor(160 / scale);
+
+    // Draw scaled version
+    scaledCtx.fillStyle = "black";
+    scaledCtx.fillRect(0, 0, scaledCanvas.width, scaledCanvas.height);
+    scaledCtx.fillStyle = "white";
+    scaledCtx.font = `${fontSize}px "${fontName}"`;
+    scaledCtx.textBaseline = "alphabetic";
+    scaledCtx.textAlign = "left";
+    scaledCtx.fillText(char, 20, Math.round(scaledCanvas.height * 0.7));
+
+    // Get scaled image data
+    const imageData = scaledCtx.getImageData(
+      0,
+      0,
+      scaledCanvas.width,
+      scaledCanvas.height
+    );
+
+    // Find bounds
+    let minX = scaledCanvas.width;
+    let maxX = 0;
+    let minY = scaledCanvas.height;
+    let maxY = 0;
+
+    for (let y = 0; y < scaledCanvas.height; y++) {
+      for (let x = 0; x < scaledCanvas.width; x++) {
+        const i = (y * scaledCanvas.width + x) * 4;
+        if (isPixelOn(imageData.data, i)) {
+          minX = Math.min(minX, x);
+          maxX = Math.max(maxX, x);
+          minY = Math.min(minY, y);
+          maxY = Math.max(maxY, y);
+        }
+      }
+    }
+
+    // Detect grid size for scaled version
+    const gridSize = detectGrid(imageData, minX, maxX, minY, maxY);
+
+    // Collect cells from scaled version
+    const scaledCells = new Set();
+    for (let y = minY; y <= maxY; y += gridSize) {
+      for (let x = minX; x <= maxX; x += gridSize) {
+        const centerX = x + Math.floor(gridSize / 2);
+        const centerY = y + Math.floor(gridSize / 2);
+        const i = (centerY * scaledCanvas.width + centerX) * 4;
+        if (isPixelOn(imageData.data, i)) {
+          const cellX = Math.floor(x / gridSize);
+          const cellY = Math.floor(y / gridSize);
+          scaledCells.add(`${cellX},${cellY}`);
+        }
+      }
+    }
+
+    // Find cell bounds
+    let minCellX = Infinity,
+      maxCellX = -Infinity;
+    let minCellY = Infinity,
+      maxCellY = -Infinity;
+
+    for (const cellKey of scaledCells) {
+      const [x, y] = cellKey.split(",").map(Number);
+      minCellX = Math.min(minCellX, x);
+      maxCellX = Math.max(maxCellX, x);
+      minCellY = Math.min(minCellY, y);
+      maxCellY = Math.max(maxCellY, y);
+    }
+
+    // Calculate dimensions
+    const scaledWidthInCells = maxCellX - minCellX + 1;
+    const scaledHeightInCells = maxCellY - minCellY + 1;
+
+    // Create pixel array from scaled version
+    const scaledPixels = Array(scaledHeightInCells)
+      .fill()
+      .map(() => Array(scaledWidthInCells).fill(false));
+
+    // Fill pixel array from cells
+    for (const cellKey of scaledCells) {
+      const [x, y] = cellKey.split(",").map(Number);
+      const cellX = x - minCellX;
+      const cellY = y - minCellY;
+      scaledPixels[cellY][cellX] = true;
+    }
+
+    const charData = { pixels: scaledPixels, width: scaledWidthInCells };
+    charCache.set(key, charData);
+    return charData;
   }
 
   const charData = { pixels, width: widthInCells };
