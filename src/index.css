@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-gray-900 text-white;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+button {
+  @apply transition-all;
+}
+
+button:disabled {
+  @apply opacity-50 cursor-not-allowed;
+}
