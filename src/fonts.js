@@ -149,7 +149,36 @@ function detectGrid(imageData, minX, maxX, minY, maxY) {
   return gridSize;
 }
 
-// Function to render test character with current font
+// Function to detect occupied cells in a character
+function detectOccupiedCells(
+  imageData,
+  minX,
+  maxX,
+  minY,
+  maxY,
+  gridSize,
+  canvasWidth
+) {
+  const cells = new Set();
+
+  // Draw sampled points and collect occupied cells
+  for (let y = minY; y <= maxY; y += gridSize) {
+    for (let x = minX; x <= maxX; x += gridSize) {
+      const centerX = x + Math.floor(gridSize / 2);
+      const centerY = y + Math.floor(gridSize / 2);
+      const i = (centerY * canvasWidth + centerX) * 4;
+
+      if (isPixelOn(imageData.data, i)) {
+        const cellX = Math.floor(x / gridSize);
+        const cellY = Math.floor(y / gridSize);
+        cells.add(`${cellX},${cellY}`);
+      }
+    }
+  }
+  return cells;
+}
+
+// Function to render test character with current font and return cell data
 function renderTestChar(fontName, text = "X") {
   // Draw test character
   ctx.fillStyle = "black";
@@ -239,17 +268,59 @@ function renderTestChar(fontName, text = "X") {
   }
   ctx.stroke();
 
-  // Draw sampled points
+  // Collect occupied cells and draw sample points
+  const cells = new Set();
   for (let y = minY; y <= maxY; y += gridSize) {
     for (let x = minX; x <= maxX; x += gridSize) {
       const centerX = x + Math.floor(gridSize / 2);
       const centerY = y + Math.floor(gridSize / 2);
       const i = (centerY * canvas.width + centerX) * 4;
+      const isOn = isPixelOn(imageData.data, i);
 
-      ctx.fillStyle = isPixelOn(imageData.data, i) ? "lime" : "red";
+      // Draw sample point
+      ctx.fillStyle = isOn ? "lime" : "red";
       ctx.fillRect(centerX - 1, centerY - 1, 3, 3);
+
+      // Store cell if occupied
+      if (isOn) {
+        const cellX = Math.floor(x / gridSize);
+        const cellY = Math.floor(y / gridSize);
+        cells.add(`${cellX},${cellY}`);
+      }
     }
   }
+
+  // Find cell bounds
+  let minCellX = Infinity,
+    maxCellX = -Infinity;
+  let minCellY = Infinity,
+    maxCellY = -Infinity;
+
+  for (const cellKey of cells) {
+    const [x, y] = cellKey.split(",").map(Number);
+    minCellX = Math.min(minCellX, x);
+    maxCellX = Math.max(maxCellX, x);
+    minCellY = Math.min(minCellY, y);
+    maxCellY = Math.max(maxCellY, y);
+  }
+
+  // Calculate dimensions
+  const widthInCells = maxCellX - minCellX + 1;
+  const heightInCells = maxCellY - minCellY + 1;
+
+  console.log(`${fontName} "${text}": ${widthInCells}x${heightInCells} cells`);
+
+  // Return all the data we gathered
+  return {
+    gridSize,
+    cells,
+    minCellX,
+    maxCellX,
+    minCellY,
+    maxCellY,
+    widthInCells,
+    heightInCells,
+  };
 }
 
 // Export function to update current font
@@ -276,47 +347,8 @@ function getFontMetrics(fontName) {
     return fontMetricsCache.get(fontName);
   }
 
-  // Clear canvas
-  charCtx.fillStyle = "black";
-  charCtx.fillRect(0, 0, charCanvas.width, charCanvas.height);
-
-  // Draw X character
-  charCtx.fillStyle = "white";
-  charCtx.font = `160px "${fontName}"`;
-  charCtx.textBaseline = "middle";
-  charCtx.textAlign = "center";
-  charCtx.fillText("X", charCanvas.width / 2, charCanvas.height / 2);
-
-  // Get image data
-  const imageData = charCtx.getImageData(
-    0,
-    0,
-    charCanvas.width,
-    charCanvas.height
-  );
-
-  // Find bounds
-  let minX = charCanvas.width;
-  let maxX = 0;
-  let minY = charCanvas.height;
-  let maxY = 0;
-
-  for (let y = 0; y < charCanvas.height; y++) {
-    for (let x = 0; x < charCanvas.width; x++) {
-      const i = (y * charCanvas.width + x) * 4;
-      if (isPixelOn(imageData.data, i)) {
-        minX = Math.min(minX, x);
-        maxX = Math.max(maxX, x);
-        minY = Math.min(minY, y);
-        maxY = Math.max(maxY, y);
-      }
-    }
-  }
-
-  // Detect grid size from X
-  const gridSize = detectGrid(imageData, minX, maxX, minY, maxY);
-  console.log(`Font ${fontName}: ${gridSize}px grid`);
-
+  // Use renderTestChar to get grid size
+  const { gridSize } = renderTestChar(fontName, "X");
   fontMetricsCache.set(fontName, gridSize);
   return gridSize;
 }
@@ -328,112 +360,21 @@ function getCharPixels(char, fontName) {
     return charCache.get(key);
   }
 
-  // Get grid size from font metrics
-  const gridSize = getFontMetrics(fontName);
-
-  // Clear canvas
-  charCtx.fillStyle = "black";
-  charCtx.fillRect(0, 0, charCanvas.width, charCanvas.height);
-
-  // Draw character
-  charCtx.fillStyle = "white";
-  charCtx.font = `160px "${fontName}"`;
-  charCtx.textBaseline = "middle";
-  charCtx.textAlign = "center";
-  charCtx.fillText(char, charCanvas.width / 2, charCanvas.height / 2);
-
-  // Get image data
-  const imageData = charCtx.getImageData(
-    0,
-    0,
-    charCanvas.width,
-    charCanvas.height
-  );
-
-  // Find bounds
-  let minX = charCanvas.width;
-  let maxX = 0;
-  let minY = charCanvas.height;
-  let maxY = 0;
-
-  for (let y = 0; y < charCanvas.height; y++) {
-    for (let x = 0; x < charCanvas.width; x++) {
-      const i = (y * charCanvas.width + x) * 4;
-      if (isPixelOn(imageData.data, i)) {
-        minX = Math.min(minX, x);
-        maxX = Math.max(maxX, x);
-        minY = Math.min(minY, y);
-        maxY = Math.max(maxY, y);
-      }
-    }
-  }
-
-  // If no pixels found, return empty data
-  if (minX === charCanvas.width || maxX === 0) {
-    const emptyData = { pixels: [], width: 1 };
-    charCache.set(key, emptyData);
-    return emptyData;
-  }
-
-  // Find the grid cells that contain pixels by sampling their centers
-  const cells = new Set(); // Store occupied cell coordinates as "x,y"
-
-  for (let y = minY; y <= maxY; y += gridSize) {
-    for (let x = minX; x <= maxX; x += gridSize) {
-      const cellX = Math.floor(x / gridSize);
-      const cellY = Math.floor(y / gridSize);
-      const centerX = x + Math.floor(gridSize / 2);
-      const centerY = y + Math.floor(gridSize / 2);
-      const i = (centerY * charCanvas.width + centerX) * 4;
-
-      if (isPixelOn(imageData.data, i)) {
-        cells.add(`${cellX},${cellY}`);
-      }
-    }
-  }
-
-  // Find the bounds of occupied cells
-  let minCellX = Infinity,
-    maxCellX = -Infinity;
-  let minCellY = Infinity,
-    maxCellY = -Infinity;
-
-  for (const cellKey of cells) {
-    const [x, y] = cellKey.split(",").map(Number);
-    minCellX = Math.min(minCellX, x);
-    maxCellX = Math.max(maxCellX, x);
-    minCellY = Math.min(minCellY, y);
-    maxCellY = Math.max(maxCellY, y);
-  }
-
-  // Calculate dimensions from occupied cells (max - min, no +1)
-  const widthInCells = maxCellX - minCellX + 1;
-  const heightInCells = maxCellY - minCellY + 1;
-
-  // Calculate snapped bounds from cell positions
-  const snappedMinX = minCellX * gridSize;
-  const snappedMaxX = (maxCellX + 1) * gridSize;
-  const snappedMinY = minCellY * gridSize;
-  const snappedMaxY = (maxCellY + 1) * gridSize;
-
-  console.log(`${fontName} "${char}": ${widthInCells}x${heightInCells} cells`);
+  // Get data from renderTestChar
+  const data = renderTestChar(fontName, char);
+  const { widthInCells, heightInCells, cells, minCellX, minCellY } = data;
 
   // Create pixel array
   const pixels = Array(heightInCells)
     .fill()
     .map(() => Array(widthInCells).fill(false));
 
-  // Fill pixel array by sampling at grid centers
-  for (let cellY = 0; cellY < heightInCells; cellY++) {
-    for (let cellX = 0; cellX < widthInCells; cellX++) {
-      // Calculate center of the current grid cell
-      const centerX = minX + cellX * gridSize + Math.floor(gridSize / 2);
-      const centerY = minY + cellY * gridSize + Math.floor(gridSize / 2);
-
-      // Sample the pixel at the center
-      const i = (centerY * charCanvas.width + centerX) * 4;
-      pixels[cellY][cellX] = isPixelOn(imageData.data, i);
-    }
+  // Fill pixel array from cells
+  for (const cellKey of cells) {
+    const [x, y] = cellKey.split(",").map(Number);
+    const cellX = x - minCellX;
+    const cellY = y - minCellY;
+    pixels[cellY][cellX] = true;
   }
 
   const charData = { pixels, width: widthInCells };
