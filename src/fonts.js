@@ -1,145 +1,22 @@
-// Create offscreen canvas for font rendering
-const scale = 10; // Render 10x size, then scale down
+import { signal } from "@preact/signals";
+
+// Create debug canvas
 const canvas = document.createElement("canvas");
 const ctx = canvas.getContext("2d", { willReadFrequently: true });
 
-// Ensure crisp pixel rendering
+// Set canvas size and style
+canvas.width = 200;
+canvas.height = 200;
+canvas.style.cssText =
+  "position: fixed; bottom: 20px; right: 20px; background: #000; border: 1px solid #333; image-rendering: pixelated;";
+document.body.appendChild(canvas);
+
+// Ensure crisp rendering
 ctx.imageSmoothingEnabled = false;
-
-canvas.width = 44 * scale;
-canvas.height = 11 * scale;
-
-// Cache for rendered characters and their widths
-const charCache = new Map();
-
-// Get character data (pixels and width)
-function getCharData(char, fontName, optimalSize, yOffset) {
-  const cacheKey = `${fontName}-${optimalSize}-${char}`;
-
-  if (charCache.has(cacheKey)) {
-    return charCache.get(cacheKey);
-  }
-
-  // Clear canvas
-  ctx.fillStyle = "black";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  // Draw single character
-  ctx.fillStyle = "white";
-  ctx.fillText(char, 0, yOffset);
-
-  // Get character width by scanning pixels
-  const charData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  let maxX = 0;
-
-  for (let x = 0; x < canvas.width; x++) {
-    for (let y = 0; y < canvas.height; y++) {
-      const i = (y * canvas.width + x) * 4;
-      if (charData.data[i] > 127) {
-        maxX = x;
-      }
-    }
-  }
-
-  // Convert to character space
-  const width = Math.round(maxX / scale);
-
-  // Create character pixel array
-  const pixels = Array(11)
-    .fill()
-    .map(() => Array(width).fill(false));
-
-  // Sample pixels for this character
-  for (let y = 0; y < 11; y++) {
-    for (let x = 0; x < width; x++) {
-      const centerX = x * scale + Math.floor(scale / 2);
-      const centerY = y * scale + Math.floor(scale / 2);
-      const i = (centerY * canvas.width + centerX) * 4;
-      pixels[y][x] = charData.data[i] > 127;
-    }
-  }
-
-  const result = { pixels, width };
-  charCache.set(cacheKey, result);
-  return result;
-}
-
-// Convert rendered text to pixel array
-export function textToPixels(text, fontName, size = 11) {
-  if (!text)
-    return Array(11)
-      .fill()
-      .map(() => Array(44).fill(false));
-
-  // Clear canvas
-  ctx.fillStyle = "black";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  // First pass: measure a representative character to get optimal size
-  ctx.fillStyle = "white";
-  ctx.font = `${size * scale}px "${fontName}"`;
-  ctx.textBaseline = "top";
-  ctx.fillText("X", 0, 0);
-
-  // Find the actual text bounds
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  let minY = canvas.height;
-  let maxY = 0;
-
-  for (let y = 0; y < canvas.height; y++) {
-    for (let x = 0; x < canvas.width; x++) {
-      const i = (y * canvas.width + x) * 4;
-      if (imageData.data[i] > 127) {
-        minY = Math.min(minY, y);
-        maxY = Math.max(maxY, y);
-      }
-    }
-  }
-
-  // Calculate scaling to fill 11px
-  const actualHeight = maxY - minY + 1;
-  const scale_factor = (11 * scale) / actualHeight;
-  const optimalSize = Math.ceil(size * scale_factor);
-  const scaledMinY = minY * scale_factor;
-  const yOffset = Math.floor((canvas.height - 11 * scale) / 2) - scaledMinY;
-
-  // Set up final font settings
-  ctx.font = `${optimalSize * scale}px "${fontName}"`;
-
-  // First pass: calculate total width
-  let totalWidth = 0;
-  const charData = [];
-
-  for (const char of text) {
-    const data = getCharData(char, fontName, optimalSize, yOffset);
-    charData.push(data);
-    totalWidth += data.width + 1; // Add 1px spacing between chars
-  }
-  totalWidth = Math.max(44, totalWidth - 1); // Remove trailing space, ensure minimum width
-
-  // Create result array with calculated width
-  const pixels = Array(11)
-    .fill()
-    .map(() => Array(totalWidth).fill(false));
-
-  // Track current x position
-  let xPos = 0;
-
-  // Render each character
-  for (const data of charData) {
-    const { pixels: charPixels, width } = data;
-
-    // Copy character pixels to result
-    for (let y = 0; y < 11; y++) {
-      for (let x = 0; x < width; x++) {
-        pixels[y][xPos + x] = charPixels[y][x];
-      }
-    }
-    xPos += width + 1; // Add 1px spacing between chars
-  }
-
-  return pixels;
-}
+ctx.textRendering = "geometricPrecision";
+ctx.fontKerning = "none";
+ctx.fontStretch = "normal";
+ctx.letterSpacing = "0px";
 
 // Get all TTF files from /public/fonts
 const fontFiles = import.meta.glob("/public/fonts/*.{ttf,otf,woff2}", {
@@ -151,7 +28,7 @@ const getName = (path) =>
   path
     .split("/")
     .pop()
-    .replace(/\.[^/]+$/, "");
+    .replace(/\.[^/.]+$/, "");
 
 // Load fonts and track their loading state
 const fontLoadingPromises = Object.entries(fontFiles).map(([path, url]) => {
@@ -163,8 +40,445 @@ const fontLoadingPromises = Object.entries(fontFiles).map(([path, url]) => {
   });
 });
 
-// Wait for all fonts to load
-await Promise.all(fontLoadingPromises);
+// Export reactive signals for fonts
+export const fonts = signal([]);
+export const currentFont = signal("monospace");
 
-// Export list of available fonts
-export const fonts = Object.keys(fontFiles).map(getName);
+// Function to check if a pixel is "on" (avoid anti-aliasing artifacts)
+function isPixelOn(data, i) {
+  return data[i] > 240; // Only consider nearly white pixels
+}
+
+// Function to find smallest transition
+function findSmallestTransition(imageData, minX, maxX, minY, maxY) {
+  let smallestDistance = Infinity;
+
+  // Scan horizontal transitions
+  for (let y = minY; y <= maxY; y++) {
+    let lastTransition = -1;
+    let lastValue = false;
+
+    for (let x = minX; x <= maxX; x++) {
+      const i = (y * canvas.width + x) * 4;
+      const value = isPixelOn(imageData.data, i);
+
+      if (value !== lastValue) {
+        if (lastTransition !== -1) {
+          const distance = x - lastTransition;
+          if (distance > 1 && distance < smallestDistance) {
+            smallestDistance = distance;
+          }
+        }
+        lastTransition = x;
+        lastValue = value;
+      }
+    }
+  }
+
+  // Scan vertical transitions
+  for (let x = minX; x <= maxX; x++) {
+    let lastTransition = -1;
+    let lastValue = false;
+
+    for (let y = minY; y <= maxY; y++) {
+      const i = (y * canvas.width + x) * 4;
+      const value = isPixelOn(imageData.data, i);
+
+      if (value !== lastValue) {
+        if (lastTransition !== -1) {
+          const distance = y - lastTransition;
+          if (distance > 1 && distance < smallestDistance) {
+            smallestDistance = distance;
+          }
+        }
+        lastTransition = y;
+        lastValue = value;
+      }
+    }
+  }
+
+  return smallestDistance;
+}
+
+// Function to check if a cell is completely filled
+function isCellFilled(imageData, startX, startY, size) {
+  for (let y = startY; y < startY + size; y++) {
+    for (let x = startX; x < startX + size; x++) {
+      const i = (y * canvas.width + x) * 4;
+      if (!isPixelOn(imageData.data, i)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+// Function to check if a cell is completely empty
+function isCellEmpty(imageData, startX, startY, size) {
+  for (let y = startY; y < startY + size; y++) {
+    for (let x = startX; x < startX + size; x++) {
+      const i = (y * canvas.width + x) * 4;
+      if (isPixelOn(imageData.data, i)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+// Function to detect pixel grid
+function detectGrid(imageData, minX, maxX, minY, maxY) {
+  // Find initial grid size from smallest transition
+  let gridSize = findSmallestTransition(imageData, minX, maxX, minY, maxY);
+  console.log("Initial grid size from transitions:", gridSize);
+
+  // If no transitions found, estimate grid size from bounds
+  if (gridSize === Infinity) {
+    const width = maxX - minX + 1;
+    const height = maxY - minY + 1;
+    // Try to fit the height into roughly 11 pixels
+    gridSize = Math.max(Math.floor(height / 11), 1);
+    console.log("Estimated grid size from bounds:", gridSize);
+  }
+
+  // Verify grid by checking cells
+  let hasPartialCells = false;
+
+  // Check each cell in the grid
+  for (let y = minY; y <= maxY - gridSize && !hasPartialCells; y += gridSize) {
+    for (
+      let x = minX;
+      x <= maxX - gridSize && !hasPartialCells;
+      x += gridSize
+    ) {
+      // Skip if cell is completely filled or empty
+      if (
+        isCellFilled(imageData, x, y, gridSize) ||
+        isCellEmpty(imageData, x, y, gridSize)
+      ) {
+        continue;
+      }
+
+      // Found a partial cell - look for transitions within it
+      hasPartialCells = true;
+
+      // Look for smallest transition within this cell
+      const cellTransition = findSmallestTransition(
+        imageData,
+        x,
+        x + gridSize,
+        y,
+        y + gridSize
+      );
+      if (cellTransition < gridSize && cellTransition !== Infinity) {
+        gridSize = cellTransition;
+      }
+    }
+  }
+
+  return gridSize;
+}
+
+// Function to render test character with current font
+function renderTestChar(fontName) {
+  // Draw test character
+  ctx.fillStyle = "black";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "white";
+
+  // Set font with explicit settings
+  ctx.font = `160px "${fontName}"`;
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "center";
+
+  // Position at center
+  const x = Math.round(canvas.width / 2);
+  const y = Math.round(canvas.height / 2);
+  ctx.fillText("X", x, y);
+
+  // Get image data
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+  // Find bounds with more precise edge detection
+  let minX = canvas.width;
+  let maxX = 0;
+  let minY = canvas.height;
+  let maxY = 0;
+
+  // First pass: find rough bounds
+  for (let y = 0; y < canvas.height; y++) {
+    for (let x = 0; x < canvas.width; x++) {
+      const i = (y * canvas.width + x) * 4;
+      if (isPixelOn(imageData.data, i)) {
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y);
+        maxY = Math.max(maxY, y);
+      }
+    }
+  }
+
+  // Second pass: refine bounds to align with pixel transitions
+  let foundLeft = false;
+  let foundRight = false;
+  for (let x = minX; x <= maxX && !foundLeft; x++) {
+    for (let y = minY; y <= maxY; y++) {
+      const i = (y * canvas.width + x) * 4;
+      if (isPixelOn(imageData.data, i)) {
+        minX = x;
+        foundLeft = true;
+        break;
+      }
+    }
+  }
+  for (let x = maxX; x >= minX && !foundRight; x--) {
+    for (let y = minY; y <= maxY; y++) {
+      const i = (y * canvas.width + x) * 4;
+      if (isPixelOn(imageData.data, i)) {
+        maxX = x;
+        foundRight = true;
+        break;
+      }
+    }
+  }
+
+  // Create a debug array to visualize what pixels we're detecting
+  const debugPixels = Array(canvas.height)
+    .fill()
+    .map(() => Array(canvas.width).fill(false));
+
+  for (let y = 0; y < canvas.height; y++) {
+    for (let x = 0; x < canvas.width; x++) {
+      const i = (y * canvas.width + x) * 4;
+      if (isPixelOn(imageData.data, i)) {
+        debugPixels[y][x] = true;
+      }
+    }
+  }
+
+  // Draw debug visualization
+  ctx.fillStyle = "rgba(255, 0, 0, 0.3)";
+  for (let y = 0; y < canvas.height; y++) {
+    for (let x = 0; x < canvas.width; x++) {
+      if (debugPixels[y][x]) {
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+  }
+
+  // Draw bounds
+  ctx.strokeStyle = "red";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(minX + 0.5, 0);
+  ctx.lineTo(minX + 0.5, canvas.height);
+  ctx.moveTo(maxX + 0.5, 0);
+  ctx.lineTo(maxX + 0.5, canvas.height);
+  ctx.moveTo(0, minY + 0.5);
+  ctx.lineTo(canvas.width, minY + 0.5);
+  ctx.moveTo(0, maxY + 0.5);
+  ctx.lineTo(canvas.width, maxY + 0.5);
+  ctx.stroke();
+
+  // Detect grid size
+  const gridSize = detectGrid(imageData, minX, maxX, minY, maxY);
+  console.log("Grid size:", gridSize, "pixels");
+
+  // Draw grid starting exactly at minX and minY
+  ctx.strokeStyle = "blue";
+  ctx.beginPath();
+
+  // Draw vertical grid lines
+  for (let x = minX; x <= maxX; x += gridSize) {
+    ctx.moveTo(x + 0.5, 0);
+    ctx.lineTo(x + 0.5, canvas.height);
+  }
+
+  // Draw horizontal grid lines
+  for (let y = minY; y <= maxY; y += gridSize) {
+    ctx.moveTo(0, y + 0.5);
+    ctx.lineTo(canvas.width, y + 0.5);
+  }
+
+  ctx.stroke();
+}
+
+// Export function to update current font
+export function setFont(fontName) {
+  currentFont.value = fontName;
+  renderTestChar(fontName);
+}
+
+// Subscribe to font changes to update debug canvas
+currentFont.subscribe(renderTestChar);
+
+// Cache for character pixel data
+const charCache = new Map();
+
+// Function to get character pixel data (from cache or generate)
+function getCharPixels(char, fontName) {
+  const key = `${fontName}:${char}`;
+  if (charCache.has(key)) {
+    return charCache.get(key);
+  }
+
+  // Clear canvas
+  ctx.fillStyle = "black";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Draw character
+  ctx.fillStyle = "white";
+  ctx.font = `160px "${fontName}"`;
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "center";
+  ctx.fillText(char, canvas.width / 2, canvas.height / 2);
+
+  // Get image data
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+  // Find bounds
+  let minX = canvas.width;
+  let maxX = 0;
+  let minY = canvas.height;
+  let maxY = 0;
+
+  for (let y = 0; y < canvas.height; y++) {
+    for (let x = 0; x < canvas.width; x++) {
+      const i = (y * canvas.width + x) * 4;
+      if (isPixelOn(imageData.data, i)) {
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y);
+        maxY = Math.max(maxY, y);
+      }
+    }
+  }
+
+  // If no pixels found, return empty data
+  if (minX === canvas.width || maxX === 0) {
+    const emptyData = { pixels: [], width: 1 };
+    charCache.set(key, emptyData);
+    return emptyData;
+  }
+
+  // Draw debug visualization
+  ctx.fillStyle = "rgba(255, 0, 0, 0.3)";
+  for (let y = 0; y < canvas.height; y++) {
+    for (let x = 0; x < canvas.width; x++) {
+      const i = (y * canvas.width + x) * 4;
+      if (isPixelOn(imageData.data, i)) {
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+  }
+
+  // Draw bounds
+  ctx.strokeStyle = "red";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(minX + 0.5, 0);
+  ctx.lineTo(minX + 0.5, canvas.height);
+  ctx.moveTo(maxX + 0.5, 0);
+  ctx.lineTo(maxX + 0.5, canvas.height);
+  ctx.moveTo(0, minY + 0.5);
+  ctx.lineTo(canvas.width, minY + 0.5);
+  ctx.moveTo(0, maxY + 0.5);
+  ctx.lineTo(canvas.width, maxY + 0.5);
+  ctx.stroke();
+
+  // Detect grid size
+  const gridSize = detectGrid(imageData, minX, maxX, minY, maxY);
+
+  // Draw grid
+  ctx.strokeStyle = "blue";
+  ctx.beginPath();
+  for (let x = minX; x <= maxX; x += gridSize) {
+    ctx.moveTo(x + 0.5, 0);
+    ctx.lineTo(x + 0.5, canvas.height);
+  }
+  for (let y = minY; y <= maxY; y += gridSize) {
+    ctx.moveTo(0, y + 0.5);
+    ctx.lineTo(canvas.width, y + 0.5);
+  }
+  ctx.stroke();
+
+  // Calculate dimensions in grid cells
+  const heightInCells = Math.ceil((maxY - minY) / gridSize);
+  const widthInCells = Math.ceil((maxX - minX) / gridSize);
+
+  // Create pixel array
+  const pixels = Array(heightInCells)
+    .fill()
+    .map(() => Array(widthInCells).fill(false));
+
+  // Fill pixel array
+  for (let cellY = 0; cellY < heightInCells; cellY++) {
+    for (let cellX = 0; cellX < widthInCells; cellX++) {
+      const startX = minX + cellX * gridSize;
+      const startY = minY + cellY * gridSize;
+
+      // Check if any pixel in this cell is on
+      pixelCheck: for (let dy = 0; dy < gridSize; dy++) {
+        for (let dx = 0; dx < gridSize; dx++) {
+          const x = startX + dx;
+          const y = startY + dy;
+          const i = (y * canvas.width + x) * 4;
+          if (isPixelOn(imageData.data, i)) {
+            pixels[cellY][cellX] = true;
+            break pixelCheck;
+          }
+        }
+      }
+    }
+  }
+
+  const charData = { pixels, width: widthInCells };
+  charCache.set(key, charData);
+  return charData;
+}
+
+// Function to render text to pixel matrix
+export function textToPixels(text, fontName, targetHeight = 11) {
+  if (!text) {
+    return Array(targetHeight)
+      .fill()
+      .map(() => Array(1).fill(false));
+  }
+
+  // Get pixel data for each character
+  const chars = text.split("").map((char) => getCharPixels(char, fontName));
+
+  // Calculate total width
+  const totalWidth = chars.reduce((sum, char) => sum + char.width, 0);
+
+  // Create result matrix
+  const result = Array(targetHeight)
+    .fill()
+    .map(() => Array(totalWidth).fill(false));
+
+  // Copy each character's pixels into result
+  let xOffset = 0;
+  for (const char of chars) {
+    const scale = targetHeight / char.pixels.length;
+
+    for (let y = 0; y < targetHeight; y++) {
+      const sourceY = Math.floor(y / scale);
+      if (sourceY < char.pixels.length) {
+        for (let x = 0; x < char.width; x++) {
+          result[y][xOffset + x] = char.pixels[sourceY][x];
+        }
+      }
+    }
+    xOffset += char.width;
+  }
+
+  return result;
+}
+
+// Wait for all fonts to load, then update fonts array and render first font
+Promise.all(fontLoadingPromises).then((loadedFonts) => {
+  fonts.value = loadedFonts;
+  if (loadedFonts.length > 0) {
+    setFont(loadedFonts[0]);
+  }
+});

@@ -1,5 +1,5 @@
-import { currentBankData, setText, setFont } from '../store'
-import { fonts } from '../fonts'
+import { currentBankData, setText } from '../store'
+import { fonts, currentFont, setFont } from '../fonts'
 import Select from './Select'
 
 export default function TextControls() {
@@ -8,12 +8,15 @@ export default function TextControls() {
   return (
     <div class="flex justify-center gap-4">
       <Select
-        value={bank.font}
-        onChange={(e) => setFont(e.target.value)}
+        value={currentFont.value}
+        onChange={(e) => {
+          setFont(e.target.value);
+          setText(bank.text); // Re-render text with new font
+        }}
         className="px-6 py-3 w-48"
       >
-        {fonts.map((font, i) => (
-          <option key={i} value={font}>
+        {fonts.value.map((font) => (
+          <option key={font} value={font}>
             {font}
           </option>
         ))}

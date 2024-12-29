@@ -1,6 +1,6 @@
 import { signal, computed } from "@preact/signals";
 import { DisplayMode, SPEED_FPS } from "./constants";
-import { textToPixels, fonts } from "./fonts";
+import { textToPixels, fonts, currentFont } from "./fonts";
 import { calculateBankMemory, DEVICE_MEMORY } from "./utils";
 
 // Bank data structure
@@ -8,7 +8,6 @@ function createBank() {
   return {
     mode: DisplayMode.STATIC,
     text: "",
-    font: fonts[0],
     pixels: Array(11)
       .fill()
       .map(() => Array(44).fill(false)),
@@ -257,28 +256,9 @@ export function togglePixel(x, y) {
 
 export function setText(text) {
   const bank = banks[currentBank.value];
-  const data = { ...bank.value, text };
-  const textPixels = textToPixels(text, data.font);
-
-  // Create new pixel array that's at least as wide as the text
-  const width = Math.max(88, textPixels[0].length);
-  data.pixels = Array(11)
-    .fill()
-    .map(() => Array(width).fill(false));
-
-  // Copy all pixels from the text
-  for (let y = 0; y < 11; y++) {
-    for (let x = 0; x < textPixels[0].length; x++) {
-      data.pixels[y][x] = textPixels[y][x];
-    }
-  }
-
-  // Auto-scroll viewport to show the last character or reset to 0 if text fits
-  if (data.mode !== DisplayMode.ANIMATION) {
-    data.viewport =
-      textPixels[0].length <= 44 ? 0 : Math.max(0, textPixels[0].length - 44);
-  }
-
+  const data = { ...bank.value };
+  data.text = text;
+  data.pixels = textToPixels(text, currentFont.value);
   bank.value = data;
 }
 
@@ -288,13 +268,6 @@ export function setMode(mode) {
   data.currentFrame = 0;
   data.viewport = 0;
   bank.value = data;
-}
-
-export function setFont(font) {
-  const bank = banks[currentBank.value];
-  const data = { ...bank.value, font };
-  bank.value = data;
-  setText(data.text); // Rerender text with new font
 }
 
 export function clearImage() {
