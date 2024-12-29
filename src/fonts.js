@@ -349,18 +349,70 @@ export function textToPixels(text, fontName, targetHeight = 11) {
   for (const char of chars) {
     if (!char.pixels.length) continue; // Skip empty characters
 
-    // Copy character pixels at original height, aligned to bottom
-    const yOffset = Math.max(0, targetHeight - char.pixels.length);
+    // Only scale if character is too tall
+    if (char.pixels.length > targetHeight) {
+      const scale = char.pixels.length / targetHeight;
+      const scaledHeight = targetHeight;
+      const scaledWidth = Math.ceil(char.width / scale);
+      const yOffset = 0;
 
-    for (let y = 0; y < char.pixels.length && y + yOffset < targetHeight; y++) {
-      for (let x = 0; x < char.width && xOffset + x < totalWidth; x++) {
-        if (y + yOffset >= 0 && y + yOffset < targetHeight) {
-          result[y + yOffset][xOffset + x] = char.pixels[y][x];
+      console.log(
+        `Scaling: original=${char.width}x${
+          char.pixels.length
+        }, scale=${scale.toFixed(2)}, ` +
+          `scaled=${scaledWidth}x${scaledHeight}, yOffset=${yOffset}, targetHeight=${targetHeight}`
+      );
+
+      // Copy character pixels with scaling
+      for (let y = 0; y < scaledHeight && y + yOffset < targetHeight; y++) {
+        // Calculate source y range for this scaled pixel
+        const srcStartY = Math.floor(y * scale);
+        const srcEndY = Math.min(
+          Math.ceil((y + 1) * scale),
+          char.pixels.length
+        );
+
+        console.log(
+          `  y=${y}: sampling source rows ${srcStartY}-${srcEndY - 1}, ` +
+            `output row=${y + yOffset}`
+        );
+
+        for (let x = 0; x < scaledWidth && xOffset + x < totalWidth; x++) {
+          // Calculate source x range for this scaled pixel
+          const srcStartX = Math.floor(x * scale);
+          const srcEndX = Math.min(Math.ceil((x + 1) * scale), char.width);
+
+          // Sample all pixels in the source range
+          let isOn = false;
+          for (let srcY = srcStartY; srcY < srcEndY && !isOn; srcY++) {
+            for (let srcX = srcStartX; srcX < srcEndX && !isOn; srcX++) {
+              if (char.pixels[srcY][srcX]) {
+                isOn = true;
+              }
+            }
+          }
+          if (y + yOffset >= 0 && y + yOffset < targetHeight) {
+            result[y + yOffset][xOffset + x] = isOn;
+          }
         }
       }
+      xOffset += scaledWidth + 1; // Add 1px gap between characters
+    } else {
+      // No scaling needed, copy directly
+      const yOffset = Math.max(0, targetHeight - char.pixels.length);
+      for (
+        let y = 0;
+        y < char.pixels.length && y + yOffset < targetHeight;
+        y++
+      ) {
+        for (let x = 0; x < char.width && xOffset + x < totalWidth; x++) {
+          if (y + yOffset >= 0 && y + yOffset < targetHeight) {
+            result[y + yOffset][xOffset + x] = char.pixels[y][x];
+          }
+        }
+      }
+      xOffset += char.width + 1; // Add 1px gap between characters
     }
-
-    xOffset += char.width + 1; // Add 1px gap between characters
   }
 
   return result;
