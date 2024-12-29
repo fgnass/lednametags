@@ -4,6 +4,7 @@ import TextControls from "./TextControls";
 import ImageControls from "./ImageControls";
 import AnimationControls from "./AnimationControls";
 import PlaybackControls from "./PlaybackControls";
+import Select from "./Select";
 
 export default function Controls() {
   const bank = currentBankData.value;
@@ -11,10 +12,10 @@ export default function Controls() {
   return (
     <div class="space-y-8">
       <div class="flex justify-center items-center gap-4">
-        <select
-          class="px-6 py-3 bg-gray-800 rounded-lg hover:bg-gray-700"
+        <Select
           value={bank.mode}
           onChange={(e) => setMode(parseInt(e.target.value))}
+          className="px-6 py-3"
         >
           <option value={DisplayMode.STATIC}>Static</option>
           <option value={DisplayMode.SCROLL_LEFT}>Scroll Left</option>
@@ -25,21 +26,21 @@ export default function Controls() {
           <option value={DisplayMode.SNOW}>Snow</option>
           <option value={DisplayMode.LASER}>Laser</option>
           <option value={DisplayMode.CURTAIN}>Curtain</option>
-        </select>
+        </Select>
 
         {bank.mode !== DisplayMode.STATIC && (
           <>
-            <select
-              class="px-6 py-3 bg-gray-800 rounded-lg hover:bg-gray-700"
+            <Select
               value={bank.speed}
               onChange={(e) => setSpeed(parseInt(e.target.value))}
+              className="px-6 py-3"
             >
               {SPEED_LABELS.map((label, i) => (
                 <option key={i} value={i + 1}>
                   {label}
                 </option>
               ))}
-            </select>
+            </Select>
 
             <PlaybackControls />
           </>
