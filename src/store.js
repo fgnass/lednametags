@@ -5,7 +5,7 @@ import {
   SCREEN_WIDTH,
   SCREEN_HEIGHT,
 } from "./constants";
-import { textToPixels, fonts, currentFont } from "./fonts";
+import { textToPixels, currentFont } from "./fonts";
 import { calculateBankMemory, DEVICE_MEMORY } from "./utils";
 
 // Bank data structure
