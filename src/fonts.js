@@ -1,31 +1,30 @@
 import { signal } from "@preact/signals";
 
 // Canvas setup
-function setupCanvases() {
+function setupCanvas() {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   canvas.width = 200;
   canvas.height = 200;
 
-  const scaledCanvas = document.createElement("canvas");
-  const scaledCtx = scaledCanvas.getContext("2d", { willReadFrequently: true });
-  scaledCanvas.width = 200;
-  scaledCanvas.height = 200;
+  ctx.textRendering = "geometricPrecision";
+  ctx.fontKerning = "none";
+  ctx.fontStretch = "normal";
+  ctx.letterSpacing = "0px";
 
-  for (const context of [ctx, scaledCtx]) {
-    context.textRendering = "geometricPrecision";
-    context.fontKerning = "none";
-    context.fontStretch = "normal";
-    context.letterSpacing = "0px";
-  }
-
-  ctx.imageSmoothingEnabled = false;
-  scaledCtx.imageSmoothingEnabled = true;
-
-  return { canvas, ctx, scaledCanvas, scaledCtx };
+  return { canvas, ctx };
 }
 
-const { canvas, ctx, scaledCanvas, scaledCtx } = setupCanvases();
+// Helper to run operations with specific smoothing setting
+function withSmoothing(ctx, smoothing, operation) {
+  const previous = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = smoothing;
+  const result = operation();
+  ctx.imageSmoothingEnabled = previous;
+  return result;
+}
+
+const { canvas, ctx } = setupCanvas();
 const charCache = new Map();
 const fontMetricsCache = new Map();
 
@@ -127,21 +126,18 @@ function findFontSizeForTargetHeight(fontName, char, targetHeight) {
   let lastHeight = 0;
 
   for (let i = 0; i < 10; i++) {
-    setupCanvasForText(scaledCtx, fontName, fontSize);
-    scaledCtx.fillText(char, 20, Math.round(scaledCanvas.height * 0.7));
+    const height = withSmoothing(ctx, true, () => {
+      setupCanvasForText(ctx, fontName, fontSize);
+      ctx.fillText(char, 20, Math.round(canvas.height * 0.7));
 
-    const imageData = scaledCtx.getImageData(
-      0,
-      0,
-      scaledCanvas.width,
-      scaledCanvas.height
-    );
-    const { minY, maxY } = findImageBounds(
-      imageData,
-      scaledCanvas.width,
-      scaledCanvas.height
-    );
-    const height = maxY - minY + 1;
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const { minY, maxY } = findImageBounds(
+        imageData,
+        canvas.width,
+        canvas.height
+      );
+      return maxY - minY + 1;
+    });
 
     if (height === targetHeight) return fontSize;
 
@@ -156,157 +152,158 @@ function findFontSizeForTargetHeight(fontName, char, targetHeight) {
 }
 
 function renderTestChar(fontName, text = "X") {
-  setupCanvasForText(ctx, fontName);
-  let x = 20;
-  const y = Math.round(canvas.height * 0.7);
+  return withSmoothing(ctx, false, () => {
+    setupCanvasForText(ctx, fontName);
+    let x = 20;
+    const y = Math.round(canvas.height * 0.7);
 
-  for (const char of text) {
-    ctx.fillText(char, x, y);
-    x += Math.ceil(ctx.measureText(char).width) + 1;
-  }
+    for (const char of text) {
+      ctx.fillText(char, x, y);
+      x += Math.ceil(ctx.measureText(char).width) + 1;
+    }
 
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const bounds = findImageBounds(imageData, canvas.width, canvas.height);
-  const gridSize = detectGrid(
-    imageData,
-    bounds.minX,
-    bounds.maxX,
-    bounds.minY,
-    bounds.maxY
-  );
-  const cells = new Set();
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const bounds = findImageBounds(imageData, canvas.width, canvas.height);
+    const gridSize = detectGrid(
+      imageData,
+      bounds.minX,
+      bounds.maxX,
+      bounds.minY,
+      bounds.maxY
+    );
+    const cells = new Set();
 
-  for (let y = bounds.minY; y <= bounds.maxY; y += gridSize) {
-    for (let x = bounds.minX; x <= bounds.maxX; x += gridSize) {
-      const centerX = x + Math.floor(gridSize / 2);
-      const centerY = y + Math.floor(gridSize / 2);
-      const i = (centerY * canvas.width + centerX) * 4;
+    for (let y = bounds.minY; y <= bounds.maxY; y += gridSize) {
+      for (let x = bounds.minX; x <= bounds.maxX; x += gridSize) {
+        const centerX = x + Math.floor(gridSize / 2);
+        const centerY = y + Math.floor(gridSize / 2);
+        const i = (centerY * canvas.width + centerX) * 4;
 
-      if (isPixelOn(imageData.data, i)) {
-        cells.add(`${Math.floor(x / gridSize)},${Math.floor(y / gridSize)}`);
+        if (isPixelOn(imageData.data, i)) {
+          cells.add(`${Math.floor(x / gridSize)},${Math.floor(y / gridSize)}`);
+        }
       }
     }
-  }
 
-  const cellBounds = Array.from(cells).reduce(
-    (acc, cell) => {
-      const [x, y] = cell.split(",").map(Number);
-      return {
-        minX: Math.min(acc.minX, x),
-        maxX: Math.max(acc.maxX, x),
-        minY: Math.min(acc.minY, y),
-        maxY: Math.max(acc.maxY, y),
-      };
-    },
-    { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity }
-  );
+    const cellBounds = Array.from(cells).reduce(
+      (acc, cell) => {
+        const [x, y] = cell.split(",").map(Number);
+        return {
+          minX: Math.min(acc.minX, x),
+          maxX: Math.max(acc.maxX, x),
+          minY: Math.min(acc.minY, y),
+          maxY: Math.max(acc.maxY, y),
+        };
+      },
+      { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity }
+    );
 
-  return {
-    gridSize,
-    cells,
-    minCellX: cellBounds.minX,
-    maxCellX: cellBounds.maxX,
-    minCellY: cellBounds.minY,
-    maxCellY: cellBounds.maxY,
-    widthInCells: cellBounds.maxX - cellBounds.minX + 1,
-    heightInCells: cellBounds.maxY - cellBounds.minY + 1,
-  };
+    return {
+      gridSize,
+      cells,
+      minCellX: cellBounds.minX,
+      maxCellX: cellBounds.maxX,
+      minCellY: cellBounds.minY,
+      maxCellY: cellBounds.maxY,
+      widthInCells: cellBounds.maxX - cellBounds.minX + 1,
+      heightInCells: cellBounds.maxY - cellBounds.minY + 1,
+    };
+  });
 }
 
 function getScaledCharPixels(char, fontName, fontSize) {
-  setupCanvasForText(scaledCtx, fontName, fontSize);
-  scaledCtx.fillText(char, 20, Math.round(scaledCanvas.height * 0.7));
+  return withSmoothing(ctx, true, () => {
+    setupCanvasForText(ctx, fontName, fontSize);
+    ctx.fillText(char, 20, Math.round(canvas.height * 0.7));
 
-  const imageData = scaledCtx.getImageData(
-    0,
-    0,
-    scaledCanvas.width,
-    scaledCanvas.height
-  );
-  const { minX, maxX, minY, maxY } = findImageBounds(
-    imageData,
-    scaledCanvas.width,
-    scaledCanvas.height
-  );
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const { minX, maxX, minY, maxY } = findImageBounds(
+      imageData,
+      canvas.width,
+      canvas.height
+    );
 
-  const width = maxX - minX + 1;
-  const height = maxY - minY + 1;
-  const pixels = Array(height)
-    .fill()
-    .map(() => Array(width).fill(false));
+    const width = maxX - minX + 1;
+    const height = maxY - minY + 1;
+    const pixels = Array(height)
+      .fill()
+      .map(() => Array(width).fill(false));
 
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const i = ((y + minY) * scaledCanvas.width + (x + minX)) * 4;
-      pixels[y][x] = isPixelOn(imageData.data, i);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = ((y + minY) * canvas.width + (x + minX)) * 4;
+        pixels[y][x] = isPixelOn(imageData.data, i);
+      }
     }
-  }
 
-  return { pixels, width, height };
+    return { pixels, width, height };
+  });
 }
 
 function getCharPixels(char, fontName) {
   const key = `${fontName}:${char}`;
   if (charCache.has(key)) return charCache.get(key);
 
-  const metrics = getFontMetrics(fontName);
-  setupCanvasForText(ctx, fontName);
-  ctx.fillText(char, 20, Math.round(canvas.height * 0.7));
+  return withSmoothing(ctx, false, () => {
+    const metrics = getFontMetrics(fontName);
+    setupCanvasForText(ctx, fontName);
+    ctx.fillText(char, 20, Math.round(canvas.height * 0.7));
 
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const bounds = findImageBounds(imageData, canvas.width, canvas.height);
-  const cells = new Set();
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const bounds = findImageBounds(imageData, canvas.width, canvas.height);
+    const cells = new Set();
 
-  for (let y = bounds.minY; y <= bounds.maxY; y += metrics.gridSize) {
-    for (let x = bounds.minX; x <= bounds.maxX; x += metrics.gridSize) {
-      const centerX = x + Math.floor(metrics.gridSize / 2);
-      const centerY = y + Math.floor(metrics.gridSize / 2);
-      const i = (centerY * canvas.width + centerX) * 4;
+    for (let y = bounds.minY; y <= bounds.maxY; y += metrics.gridSize) {
+      for (let x = bounds.minX; x <= bounds.maxX; x += metrics.gridSize) {
+        const centerX = x + Math.floor(metrics.gridSize / 2);
+        const centerY = y + Math.floor(metrics.gridSize / 2);
+        const i = (centerY * canvas.width + centerX) * 4;
 
-      if (isPixelOn(imageData.data, i)) {
-        cells.add(
-          `${Math.floor(x / metrics.gridSize)},${Math.floor(
-            y / metrics.gridSize
-          )}`
-        );
+        if (isPixelOn(imageData.data, i)) {
+          cells.add(
+            `${Math.floor(x / metrics.gridSize)},${Math.floor(
+              y / metrics.gridSize
+            )}`
+          );
+        }
       }
     }
-  }
 
-  const cellBounds = Array.from(cells).reduce(
-    (acc, cell) => {
+    const cellBounds = Array.from(cells).reduce(
+      (acc, cell) => {
+        const [x, y] = cell.split(",").map(Number);
+        return {
+          minX: Math.min(acc.minX, x),
+          maxX: Math.max(acc.maxX, x),
+          minY: Math.min(acc.minY, y),
+          maxY: Math.max(acc.maxY, y),
+        };
+      },
+      { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity }
+    );
+
+    const widthInCells = cellBounds.maxX - cellBounds.minX + 1;
+    const heightInCells = cellBounds.maxY - cellBounds.minY + 1;
+
+    if (heightInCells > 11) {
+      const fontSize = findFontSizeForTargetHeight(fontName, char, 11);
+      const charData = getScaledCharPixels(char, fontName, fontSize);
+      charCache.set(key, charData);
+      return charData;
+    }
+
+    const pixels = Array(heightInCells)
+      .fill()
+      .map(() => Array(widthInCells).fill(false));
+    for (const cell of cells) {
       const [x, y] = cell.split(",").map(Number);
-      return {
-        minX: Math.min(acc.minX, x),
-        maxX: Math.max(acc.maxX, x),
-        minY: Math.min(acc.minY, y),
-        maxY: Math.max(acc.maxY, y),
-      };
-    },
-    { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity }
-  );
+      pixels[y - cellBounds.minY][x - cellBounds.minX] = true;
+    }
 
-  const widthInCells = cellBounds.maxX - cellBounds.minX + 1;
-  const heightInCells = cellBounds.maxY - cellBounds.minY + 1;
-
-  if (heightInCells > 11) {
-    const fontSize = findFontSizeForTargetHeight(fontName, char, 11);
-    const charData = getScaledCharPixels(char, fontName, fontSize);
+    const charData = { pixels, width: widthInCells, height: heightInCells };
     charCache.set(key, charData);
     return charData;
-  }
-
-  const pixels = Array(heightInCells)
-    .fill()
-    .map(() => Array(widthInCells).fill(false));
-  for (const cell of cells) {
-    const [x, y] = cell.split(",").map(Number);
-    pixels[y - cellBounds.minY][x - cellBounds.minX] = true;
-  }
-
-  const charData = { pixels, width: widthInCells, height: heightInCells };
-  charCache.set(key, charData);
-  return charData;
+  });
 }
 
 function getFontMetrics(fontName) {
