@@ -1,163 +1,53 @@
 import { signal } from "@preact/signals";
 
-// ============================================================================
-// Canvas Setup and Configuration
-// ============================================================================
-
-function setupDebugCanvases() {
-  // Create debug canvas
+// Canvas setup
+function setupCanvases() {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
-
-  // Set canvas size and style
   canvas.width = 200;
   canvas.height = 200;
 
-  // Create second canvas for scaled preview
   const scaledCanvas = document.createElement("canvas");
   const scaledCtx = scaledCanvas.getContext("2d", { willReadFrequently: true });
   scaledCanvas.width = 200;
   scaledCanvas.height = 200;
 
-  // Configure canvas rendering settings
-  ctx.imageSmoothingEnabled = false;
-  ctx.textRendering = "geometricPrecision";
-  ctx.fontKerning = "none";
-  ctx.fontStretch = "normal";
-  ctx.letterSpacing = "0px";
+  for (const context of [ctx, scaledCtx]) {
+    context.textRendering = "geometricPrecision";
+    context.fontKerning = "none";
+    context.fontStretch = "normal";
+    context.letterSpacing = "0px";
+  }
 
+  ctx.imageSmoothingEnabled = false;
   scaledCtx.imageSmoothingEnabled = true;
-  scaledCtx.textRendering = "geometricPrecision";
-  scaledCtx.fontKerning = "none";
-  scaledCtx.fontStretch = "normal";
-  scaledCtx.letterSpacing = "0px";
 
   return { canvas, ctx, scaledCanvas, scaledCtx };
 }
 
-const { canvas, ctx, scaledCanvas, scaledCtx } = setupDebugCanvases();
-
-// ============================================================================
-// State Management
-// ============================================================================
-
-// Cache for character pixel data and font metrics
+const { canvas, ctx, scaledCanvas, scaledCtx } = setupCanvases();
 const charCache = new Map();
 const fontMetricsCache = new Map();
 
-// Reactive signals for font state
 export const fonts = signal([]);
 export const currentFont = signal("monospace");
 export const currentChar = signal("X");
 
-// ============================================================================
-// Font Loading
-// ============================================================================
-
-// Get all TTF files from /public/fonts
+// Font loading
 const fontFiles = import.meta.glob("/public/fonts/*.{ttf,otf,woff2}", {
   as: "url",
   eager: true,
 });
 
-const getName = (path) =>
-  path
-    .split("/")
-    .pop()
-    .replace(/\.[^/.]+$/, "");
-
-// Load fonts and track their loading state
-const fontLoadingPromises = Object.entries(fontFiles).map(([path, url]) => {
-  const fontName = getName(path);
-  const font = new FontFace(fontName, `url(${url})`);
-  return font.load().then((loadedFont) => {
-    document.fonts.add(loadedFont);
-    return fontName;
-  });
-});
-
-// ============================================================================
-// Pixel Detection Utilities
-// ============================================================================
-
 function isPixelOn(data, i) {
-  return data[i] > 90; // Only consider nearly white pixels
+  return data[i] > 90;
 }
-
-function findSmallestTransition(imageData, minX, maxX, minY, maxY) {
-  let smallestDistance = Infinity;
-
-  // Scan horizontal transitions
-  for (let y = minY; y <= maxY; y++) {
-    let lastTransition = -1;
-    let lastValue = false;
-
-    for (let x = minX; x <= maxX; x++) {
-      const i = (y * canvas.width + x) * 4;
-      const value = isPixelOn(imageData.data, i);
-
-      if (value !== lastValue) {
-        if (lastTransition !== -1) {
-          const distance = x - lastTransition;
-          if (distance >= 4 && distance < smallestDistance) {
-            smallestDistance = distance;
-          }
-        }
-        lastTransition = x;
-        lastValue = value;
-      }
-    }
-  }
-
-  // Scan vertical transitions
-  for (let x = minX; x <= maxX; x++) {
-    let lastTransition = -1;
-    let lastValue = false;
-
-    for (let y = minY; y <= maxY; y++) {
-      const i = (y * canvas.width + x) * 4;
-      const value = isPixelOn(imageData.data, i);
-
-      if (value !== lastValue) {
-        if (lastTransition !== -1) {
-          const distance = y - lastTransition;
-          if (distance >= 4 && distance < smallestDistance) {
-            smallestDistance = distance;
-          }
-        }
-        lastTransition = y;
-        lastValue = value;
-      }
-    }
-  }
-
-  return smallestDistance;
-}
-
-function detectGrid(imageData, minX, maxX, minY, maxY) {
-  // Find initial grid size from smallest transition
-  let gridSize = findSmallestTransition(imageData, minX, maxX, minY, maxY);
-
-  // If no transitions found, estimate grid size from bounds
-  if (gridSize === Infinity) {
-    const width = maxX - minX + 1;
-    const height = maxY - minY + 1;
-    // Try to fit the height into roughly 11 pixels
-    gridSize = Math.max(Math.floor(height / 11), 1);
-  }
-
-  return gridSize;
-}
-
-// ============================================================================
-// Image Processing Utilities
-// ============================================================================
 
 function findImageBounds(imageData, width, height) {
-  let minX = width;
-  let maxX = 0;
-  let minY = height;
-  let maxY = 0;
+  let minX = width,
+    maxX = 0,
+    minY = height,
+    maxY = 0;
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
@@ -174,26 +64,54 @@ function findImageBounds(imageData, width, height) {
   return { minX, maxX, minY, maxY };
 }
 
-function findCellBounds(cells) {
-  let minCellX = Infinity,
-    maxCellX = -Infinity;
-  let minCellY = Infinity,
-    maxCellY = -Infinity;
+function findSmallestTransition(imageData, minX, maxX, minY, maxY) {
+  let smallestDistance = Infinity;
 
-  for (const cellKey of cells) {
-    const [x, y] = cellKey.split(",").map(Number);
-    minCellX = Math.min(minCellX, x);
-    maxCellX = Math.max(maxCellX, x);
-    minCellY = Math.min(minCellY, y);
-    maxCellY = Math.max(maxCellY, y);
+  // Scan horizontal and vertical transitions
+  for (const isVertical of [false, true]) {
+    for (
+      let i = isVertical ? minX : minY;
+      i <= (isVertical ? maxX : maxY);
+      i++
+    ) {
+      let lastTransition = -1;
+      let lastValue = false;
+
+      for (
+        let j = isVertical ? minY : minX;
+        j <= (isVertical ? maxY : maxX);
+        j++
+      ) {
+        const idx = isVertical
+          ? (j * canvas.width + i) * 4
+          : (i * canvas.width + j) * 4;
+        const value = isPixelOn(imageData.data, idx);
+
+        if (value !== lastValue) {
+          if (lastTransition !== -1) {
+            const distance = j - lastTransition;
+            if (distance >= 4 && distance < smallestDistance) {
+              smallestDistance = distance;
+            }
+          }
+          lastTransition = j;
+          lastValue = value;
+        }
+      }
+    }
   }
 
-  return { minCellX, maxCellX, minCellY, maxCellY };
+  return smallestDistance;
 }
 
-// ============================================================================
-// Canvas Utilities
-// ============================================================================
+function detectGrid(imageData, minX, maxX, minY, maxY) {
+  const gridSize = findSmallestTransition(imageData, minX, maxX, minY, maxY);
+  if (gridSize === Infinity) {
+    const height = maxY - minY + 1;
+    return Math.max(Math.floor(height / 11), 1);
+  }
+  return gridSize;
+}
 
 function setupCanvasForText(ctx, fontName, fontSize = 160) {
   ctx.fillStyle = "black";
@@ -204,27 +122,11 @@ function setupCanvasForText(ctx, fontName, fontSize = 160) {
   ctx.textAlign = "left";
 }
 
-function createPixelArray(height, width) {
-  return Array(height)
-    .fill()
-    .map(() => Array(width).fill(false));
-}
-
-function parseCellCoords(cellKey) {
-  return cellKey.split(",").map(Number);
-}
-
-// ============================================================================
-// Character Rendering
-// ============================================================================
-
 function findFontSizeForTargetHeight(fontName, char, targetHeight) {
   let fontSize = 30;
   let lastHeight = 0;
-  let iterations = 0;
-  const maxIterations = 10;
 
-  while (iterations < maxIterations) {
+  for (let i = 0; i < 10; i++) {
     setupCanvasForText(scaledCtx, fontName, fontSize);
     scaledCtx.fillText(char, 20, Math.round(scaledCanvas.height * 0.7));
 
@@ -248,7 +150,6 @@ function findFontSizeForTargetHeight(fontName, char, targetHeight) {
 
     lastHeight = fontSize;
     fontSize = newFontSize;
-    iterations++;
   }
 
   return fontSize;
@@ -256,57 +157,59 @@ function findFontSizeForTargetHeight(fontName, char, targetHeight) {
 
 function renderTestChar(fontName, text = "X") {
   setupCanvasForText(ctx, fontName);
-
-  // Draw text
   let x = 20;
   const y = Math.round(canvas.height * 0.7);
+
   for (const char of text) {
     ctx.fillText(char, x, y);
-    const metrics = ctx.measureText(char);
-    x += Math.ceil(metrics.width) + 1;
+    x += Math.ceil(ctx.measureText(char).width) + 1;
   }
 
-  // Process image data
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const { minX, maxX, minY, maxY } = findImageBounds(
+  const bounds = findImageBounds(imageData, canvas.width, canvas.height);
+  const gridSize = detectGrid(
     imageData,
-    canvas.width,
-    canvas.height
+    bounds.minX,
+    bounds.maxX,
+    bounds.minY,
+    bounds.maxY
   );
-
-  // Get grid size and collect cells
-  const gridSize = detectGrid(imageData, minX, maxX, minY, maxY);
   const cells = new Set();
 
-  // Sample points in grid
-  for (let y = minY; y <= maxY; y += gridSize) {
-    for (let x = minX; x <= maxX; x += gridSize) {
+  for (let y = bounds.minY; y <= bounds.maxY; y += gridSize) {
+    for (let x = bounds.minX; x <= bounds.maxX; x += gridSize) {
       const centerX = x + Math.floor(gridSize / 2);
       const centerY = y + Math.floor(gridSize / 2);
       const i = (centerY * canvas.width + centerX) * 4;
 
       if (isPixelOn(imageData.data, i)) {
-        const cellX = Math.floor(x / gridSize);
-        const cellY = Math.floor(y / gridSize);
-        cells.add(`${cellX},${cellY}`);
+        cells.add(`${Math.floor(x / gridSize)},${Math.floor(y / gridSize)}`);
       }
     }
   }
 
-  // Calculate dimensions
-  const { minCellX, maxCellX, minCellY, maxCellY } = findCellBounds(cells);
-  const widthInCells = maxCellX - minCellX + 1;
-  const heightInCells = maxCellY - minCellY + 1;
+  const cellBounds = Array.from(cells).reduce(
+    (acc, cell) => {
+      const [x, y] = cell.split(",").map(Number);
+      return {
+        minX: Math.min(acc.minX, x),
+        maxX: Math.max(acc.maxX, x),
+        minY: Math.min(acc.minY, y),
+        maxY: Math.max(acc.maxY, y),
+      };
+    },
+    { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity }
+  );
 
   return {
     gridSize,
     cells,
-    minCellX,
-    maxCellX,
-    minCellY,
-    maxCellY,
-    widthInCells,
-    heightInCells,
+    minCellX: cellBounds.minX,
+    maxCellX: cellBounds.maxX,
+    minCellY: cellBounds.minY,
+    maxCellY: cellBounds.maxY,
+    widthInCells: cellBounds.maxX - cellBounds.minX + 1,
+    heightInCells: cellBounds.maxY - cellBounds.minY + 1,
   };
 }
 
@@ -328,7 +231,9 @@ function getScaledCharPixels(char, fontName, fontSize) {
 
   const width = maxX - minX + 1;
   const height = maxY - minY + 1;
-  const pixels = createPixelArray(height, width);
+  const pixels = Array(height)
+    .fill()
+    .map(() => Array(width).fill(false));
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
@@ -342,50 +247,48 @@ function getScaledCharPixels(char, fontName, fontSize) {
 
 function getCharPixels(char, fontName) {
   const key = `${fontName}:${char}`;
-  if (charCache.has(key)) {
-    return charCache.get(key);
-  }
+  if (charCache.has(key)) return charCache.get(key);
 
-  // Get grid size from X
   const metrics = getFontMetrics(fontName);
-  const gridSize = metrics.gridSize;
-
-  // Draw the character
   setupCanvasForText(ctx, fontName);
-  let x = 20;
-  const y = Math.round(canvas.height * 0.7);
-  ctx.fillText(char, x, y);
+  ctx.fillText(char, 20, Math.round(canvas.height * 0.7));
 
-  // Process image data
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const { minX, maxX, minY, maxY } = findImageBounds(
-    imageData,
-    canvas.width,
-    canvas.height
-  );
-
-  // Collect cells using the grid size from X
+  const bounds = findImageBounds(imageData, canvas.width, canvas.height);
   const cells = new Set();
-  for (let y = minY; y <= maxY; y += gridSize) {
-    for (let x = minX; x <= maxX; x += gridSize) {
-      const centerX = x + Math.floor(gridSize / 2);
-      const centerY = y + Math.floor(gridSize / 2);
+
+  for (let y = bounds.minY; y <= bounds.maxY; y += metrics.gridSize) {
+    for (let x = bounds.minX; x <= bounds.maxX; x += metrics.gridSize) {
+      const centerX = x + Math.floor(metrics.gridSize / 2);
+      const centerY = y + Math.floor(metrics.gridSize / 2);
       const i = (centerY * canvas.width + centerX) * 4;
 
       if (isPixelOn(imageData.data, i)) {
-        const cellX = Math.floor(x / gridSize);
-        const cellY = Math.floor(y / gridSize);
-        cells.add(`${cellX},${cellY}`);
+        cells.add(
+          `${Math.floor(x / metrics.gridSize)},${Math.floor(
+            y / metrics.gridSize
+          )}`
+        );
       }
     }
   }
 
-  // Calculate dimensions
-  const { minCellX, maxCellX, minCellY, maxCellY } = findCellBounds(cells);
-  const widthInCells = maxCellX - minCellX + 1;
-  const heightInCells = maxCellY - minCellY + 1;
+  const cellBounds = Array.from(cells).reduce(
+    (acc, cell) => {
+      const [x, y] = cell.split(",").map(Number);
+      return {
+        minX: Math.min(acc.minX, x),
+        maxX: Math.max(acc.maxX, x),
+        minY: Math.min(acc.minY, y),
+        maxY: Math.max(acc.maxY, y),
+      };
+    },
+    { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity }
+  );
 
-  // If character is too tall, render it scaled down
+  const widthInCells = cellBounds.maxX - cellBounds.minX + 1;
+  const heightInCells = cellBounds.maxY - cellBounds.minY + 1;
+
   if (heightInCells > 11) {
     const fontSize = findFontSizeForTargetHeight(fontName, char, 11);
     const charData = getScaledCharPixels(char, fontName, fontSize);
@@ -393,15 +296,12 @@ function getCharPixels(char, fontName) {
     return charData;
   }
 
-  // For non-scaled characters, create pixel array from original data
-  const pixels = createPixelArray(heightInCells, widthInCells);
-
-  // Fill pixel array from cells
-  for (const cellKey of cells) {
-    const [x, y] = parseCellCoords(cellKey);
-    const cellX = x - minCellX;
-    const cellY = y - minCellY;
-    pixels[cellY][cellX] = true;
+  const pixels = Array(heightInCells)
+    .fill()
+    .map(() => Array(widthInCells).fill(false));
+  for (const cell of cells) {
+    const [x, y] = cell.split(",").map(Number);
+    pixels[y - cellBounds.minY][x - cellBounds.minX] = true;
   }
 
   const charData = { pixels, width: widthInCells, height: heightInCells };
@@ -409,17 +309,8 @@ function getCharPixels(char, fontName) {
   return charData;
 }
 
-// ============================================================================
-// Public API
-// ============================================================================
-
-// Function to get font metrics using X as reference
 function getFontMetrics(fontName) {
-  if (fontMetricsCache.has(fontName)) {
-    return fontMetricsCache.get(fontName);
-  }
-
-  // Use renderTestChar to get grid size from X
+  if (fontMetricsCache.has(fontName)) return fontMetricsCache.get(fontName);
   const metrics = renderTestChar(fontName, "X");
   fontMetricsCache.set(fontName, metrics);
   return metrics;
@@ -438,38 +329,24 @@ export function textToPixels(text, fontName, targetHeight = 11) {
       .map(() => Array(1).fill(false));
   }
 
-  // Update current char to last typed character
   currentChar.value = text[text.length - 1];
-
-  // Get pixel data for each character
   const chars = text.split("").map((char) => getCharPixels(char, fontName));
-
-  // Calculate total width
-  const totalWidth = chars.reduce((sum, char) => sum + char.width + 1, 0) - 1; // Add 1px gaps, but not after last char
-
+  const totalWidth = chars.reduce((sum, char) => sum + char.width + 1, 0) - 1;
   const metrics = getFontMetrics(fontName);
-
-  // Create result matrix
   const result = Array(targetHeight)
     .fill()
     .map(() => Array(totalWidth).fill(false));
 
-  // Copy each character's pixels into result
   let xOffset = 0;
   for (const char of chars) {
-    if (!char.pixels.length) continue; // Skip empty characters
+    if (!char.pixels.length) continue;
 
-    // Calculate vertical position based on font height
-    let yOffset;
-    if (metrics.heightInCells > 11) {
-      // For tall fonts, align to bottom
-      yOffset = targetHeight - char.height;
-    } else {
-      // For small fonts, use shift logic to align within their natural height
-      const shift =
-        metrics.heightInCells <= 11 ? metrics.heightInCells - char.height : 0;
-      yOffset = shift + Math.floor((targetHeight - metrics.heightInCells) / 2);
-    }
+    const yOffset =
+      metrics.heightInCells > 11
+        ? targetHeight - char.height
+        : (metrics.heightInCells <= 11
+            ? metrics.heightInCells - char.height
+            : 0) + Math.floor((targetHeight - metrics.heightInCells) / 2);
 
     for (let y = 0; y < char.pixels.length && y + yOffset < targetHeight; y++) {
       for (let x = 0; x < char.width && xOffset + x < totalWidth; x++) {
@@ -479,26 +356,30 @@ export function textToPixels(text, fontName, targetHeight = 11) {
       }
     }
 
-    xOffset += char.width + 1; // Add 1px gap between characters
+    xOffset += char.width + 1;
   }
 
   return result;
 }
 
-// ============================================================================
-// Initialization
-// ============================================================================
-
-// Subscribe to font and char changes to update debug canvas
+// Initialize
 currentFont.subscribe((fontName) =>
   renderTestChar(fontName, currentChar.value)
 );
 currentChar.subscribe((char) => renderTestChar(currentFont.value, char));
 
-// Wait for all fonts to load, then update fonts array and render first font
-Promise.all(fontLoadingPromises).then((loadedFonts) => {
+Promise.all(
+  Object.entries(fontFiles).map(([path, url]) => {
+    const fontName = path
+      .split("/")
+      .pop()
+      .replace(/\.[^/.]+$/, "");
+    return new FontFace(fontName, `url(${url})`).load().then((font) => {
+      document.fonts.add(font);
+      return fontName;
+    });
+  })
+).then((loadedFonts) => {
   fonts.value = loadedFonts;
-  if (loadedFonts.length > 0) {
-    setFont(loadedFonts[0]);
-  }
+  if (loadedFonts.length > 0) setFont(loadedFonts[0]);
 });
