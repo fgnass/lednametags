@@ -1,8 +1,16 @@
 import { createHeader, framesToDeviceFormat } from "./utils";
 import { isConnected, currentBankData, banks } from "./store";
 
+const PACKET_SIZE = 64;
+const PROTOCOL_HEADER = new Uint8Array([
+  0x77, 0x61, 0x6e, 0x67, 0x00, 0x00, 0x00, 0x00, 0x40, 0x40, 0x40, 0x40, 0x40,
+  0x40, 0x40, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+]);
+
 let device = null;
-let outputReport = null;
 
 export async function connectToDevice() {
   console.log("Attempting to connect to device...");
@@ -29,24 +37,40 @@ export async function connectToDevice() {
     }
 
     device = devices[0];
-    console.log("Device collections:", device.collections);
+    console.log("Selected device:", {
+      productName: device.productName,
+      manufacturerName: device.manufacturerName,
+      vendorId: device.vendorId,
+      productId: device.productId,
+    });
 
-    // Find the output report we need
-    for (const collection of device.collections) {
-      console.log("Collection:", collection);
-      for (const report of collection.outputReports) {
-        console.log("Output report:", report);
-        outputReport = report;
-      }
+    await device.open();
+    console.log("Device opened");
+
+    // Log detailed device capabilities
+    if (device.collections && device.collections.length > 0) {
+      const collection = device.collections[0];
+      console.log("Device collection:", {
+        usagePage: collection.usagePage,
+        usage: collection.usage,
+        inputReports: collection.inputReports.map((r) => ({
+          reportId: r.reportId,
+          items: r.items,
+        })),
+        outputReports: collection.outputReports.map((r) => ({
+          reportId: r.reportId,
+          items: r.items,
+        })),
+      });
     }
 
-    if (!outputReport) {
-      console.error("No suitable output report found");
+    // Send initial protocol header
+    try {
+      await sendPacket(PROTOCOL_HEADER);
+      console.log("Protocol header sent successfully");
+    } catch (error) {
+      console.error("Error sending protocol header:", error);
       return false;
-    }
-
-    if (!device.opened) {
-      await device.open();
     }
 
     isConnected.value = true;
@@ -64,7 +88,6 @@ export async function toggleConnection() {
       await device.close();
     }
     device = null;
-    outputReport = null;
     isConnected.value = false;
     return false;
   } else {
@@ -72,33 +95,54 @@ export async function toggleConnection() {
   }
 }
 
-export async function sendPacket(data) {
+async function sendPacket(data) {
   if (!device?.opened) {
     alert("Device not connected");
     return false;
   }
 
   try {
-    console.log("Sending data to device:", {
-      reportId: outputReport.reportId,
-      dataLength: data.length,
-      data: data,
+    // Get output report from first collection
+    const outputReport = device.collections[0].outputReports[0];
+    if (!outputReport) {
+      throw new Error("No output report found");
+    }
+
+    const reportId = outputReport.reportId || 0;
+    console.log("Sending data:", {
+      totalLength: data.length,
+      reportId,
+      collections: device.collections.length,
+      outputReports: device.collections[0].outputReports.length,
+      firstBytes: Array.from(data.slice(0, 4)).map((b) => b.toString(16)),
     });
-    await device.sendReport(outputReport.reportId, data);
-    console.log("Data sent successfully");
+
+    // Create fixed-size packet for first chunk
+    const packet = new Uint8Array(PACKET_SIZE);
+    packet.set(data.slice(0, PACKET_SIZE));
+
+    try {
+      await Promise.race([
+        device.sendReport(reportId, packet),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Timeout sending data")), 5000)
+        ),
+      ]);
+      console.log("Data sent successfully");
+    } catch (error) {
+      console.error("Error sending data:", error);
+      throw error;
+    }
+
     return true;
   } catch (error) {
-    console.error("Error sending data:", error);
+    console.error("Error details:", {
+      message: error.message,
+      name: error.name,
+      stack: error.stack,
+    });
     return false;
   }
-}
-
-export async function sendMessage(options) {
-  const header = createHeader(options);
-  const data = new Uint8Array(header.length + options.messageData.length);
-  data.set(header);
-  data.set(options.messageData, header.length);
-  return sendPacket(data);
 }
 
 export async function uploadToDevice() {
@@ -111,32 +155,57 @@ export async function uploadToDevice() {
     }
   }
 
+  // Collect all bank data first
+  const modes = [];
+  const speeds = [];
+  const messageLengths = [];
+  const allPixelData = [];
+
   for (const bankSignal of banks) {
     const bank = bankSignal.value;
     console.log("Preparing bank data:", bank);
-    const header = createHeader({
-      modes: [bank.mode],
-      speeds: [bank.speed],
-      brightness: 100, // Assuming full brightness
-      messageLengths: [Math.ceil(bank.pixels[0].length / 8)],
-    });
 
-    const pixelData = framesToDeviceFormat(bank);
-    const data = new Uint8Array(header.length + pixelData.length);
-    data.set(header);
-    data.set(pixelData, header.length);
+    modes.push(bank.mode);
+    speeds.push(bank.speed);
+    messageLengths.push(Math.ceil(bank.pixels[0].length / 8));
+    allPixelData.push(framesToDeviceFormat(bank));
+  }
 
-    console.log("Uploading bank data:", {
-      headerLength: header.length,
-      pixelDataLength: pixelData.length,
-      totalLength: data.length,
-    });
+  // Create single header for all banks
+  const header = createHeader({
+    modes,
+    speeds,
+    brightness: 100,
+    messageLengths,
+  });
 
-    const success = await sendPacket(data);
-    if (!success) {
-      console.error("Failed to upload bank");
-      return false;
-    }
+  // Calculate total size and create final buffer
+  const totalPixelLength = allPixelData.reduce(
+    (sum, data) => sum + data.length,
+    0
+  );
+  const data = new Uint8Array(header.length + totalPixelLength);
+
+  // Add header
+  data.set(header);
+
+  // Add all pixel data sequentially
+  let offset = header.length;
+  for (const pixelData of allPixelData) {
+    data.set(pixelData, offset);
+    offset += pixelData.length;
+  }
+
+  console.log("Uploading all bank data:", {
+    headerLength: header.length,
+    pixelDataLength: totalPixelLength,
+    totalLength: data.length,
+  });
+
+  const success = await sendPacket(data);
+  if (!success) {
+    console.error("Failed to upload banks");
+    return false;
   }
 
   console.log("Upload completed successfully");
