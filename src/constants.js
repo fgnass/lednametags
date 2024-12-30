@@ -10,6 +10,10 @@ export const DisplayMode = {
   CURTAIN: 8,
 };
 
+// Screen dimensions
+export const SCREEN_WIDTH = 44;
+export const SCREEN_HEIGHT = 11;
+
 // Speed to FPS mapping (array index is the speed - 1)
 export const SPEED_FPS = [1.2, 1.3, 2.0, 2.4, 2.8, 4.5, 7.5, 15];
 

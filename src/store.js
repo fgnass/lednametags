@@ -1,5 +1,10 @@
 import { signal, computed } from "@preact/signals";
-import { DisplayMode, SPEED_FPS } from "./constants";
+import {
+  DisplayMode,
+  SPEED_FPS,
+  SCREEN_WIDTH,
+  SCREEN_HEIGHT,
+} from "./constants";
 import { textToPixels, fonts, currentFont } from "./fonts";
 import { calculateBankMemory, DEVICE_MEMORY } from "./utils";
 
@@ -8,9 +13,9 @@ function createBank() {
   return {
     mode: DisplayMode.STATIC,
     text: "",
-    pixels: Array(11)
+    pixels: Array(SCREEN_HEIGHT)
       .fill()
-      .map(() => Array(44).fill(false)),
+      .map(() => Array(SCREEN_WIDTH).fill(false)),
     currentFrame: 0,
     viewport: 0,
     speed: 7, // Default speed (7 = 7.5 fps)
@@ -239,6 +244,11 @@ export const frameCount = computed(() => {
   return Math.ceil(bank.pixels[0].length / 44);
 });
 
+// Helper to determine if text should be centered based on mode
+function shouldCenterText(mode) {
+  return mode !== DisplayMode.SCROLL_LEFT && mode !== DisplayMode.SCROLL_RIGHT;
+}
+
 // Actions
 export function togglePixel(x, y) {
   const bank = banks[currentBank.value];
@@ -257,8 +267,37 @@ export function togglePixel(x, y) {
 export function setText(text) {
   const bank = banks[currentBank.value];
   const data = { ...bank.value };
+  const oldWidth = data.pixels[0].length;
+  const oldViewport = data.viewport;
+
   data.text = text;
-  data.pixels = textToPixels(text, currentFont.value);
+  data.pixels = textToPixels(
+    text,
+    currentFont.value,
+    shouldCenterText(data.mode)
+  );
+
+  // Handle scrolling behavior for horizontal modes
+  if (
+    data.mode === DisplayMode.SCROLL_LEFT ||
+    data.mode === DisplayMode.SCROLL_RIGHT
+  ) {
+    const textWidth = data.pixels[0].length;
+
+    if (textWidth > SCREEN_WIDTH) {
+      if (textWidth > oldWidth) {
+        // Text got longer - show the end
+        data.viewport = textWidth - SCREEN_WIDTH;
+      } else {
+        // Text got shorter - preserve viewport but don't exceed bounds
+        data.viewport = Math.min(oldViewport, textWidth - SCREEN_WIDTH);
+      }
+    } else {
+      // Text fits on screen, reset viewport
+      data.viewport = 0;
+    }
+  }
+
   bank.value = data;
 }
 
@@ -267,6 +306,16 @@ export function setMode(mode) {
   const data = { ...bank.value, mode };
   data.currentFrame = 0;
   data.viewport = 0;
+
+  // Re-render text with appropriate centering if there is text
+  if (data.text) {
+    data.pixels = textToPixels(
+      data.text,
+      currentFont.value,
+      shouldCenterText(mode)
+    );
+  }
+
   bank.value = data;
 }
 

@@ -1,4 +1,5 @@
 import { signal } from "@preact/signals";
+import { DisplayMode, SCREEN_WIDTH, SCREEN_HEIGHT } from "./constants";
 
 // Canvas setup
 function setupCanvas() {
@@ -107,7 +108,7 @@ function detectGrid(imageData, minX, maxX, minY, maxY) {
   const gridSize = findSmallestTransition(imageData, minX, maxX, minY, maxY);
   if (gridSize === Infinity) {
     const height = maxY - minY + 1;
-    return Math.max(Math.floor(height / 11), 1);
+    return Math.max(Math.floor(height / SCREEN_HEIGHT), 1);
   }
   return gridSize;
 }
@@ -121,7 +122,11 @@ function setupCanvasForText(ctx, fontName, fontSize = 160) {
   ctx.textAlign = "left";
 }
 
-function findFontSizeForTargetHeight(fontName, char, targetHeight) {
+function findFontSizeForTargetHeight(
+  fontName,
+  char,
+  targetHeight = SCREEN_HEIGHT
+) {
   let fontSize = 30;
   let lastHeight = 0;
 
@@ -254,7 +259,7 @@ function getCharPixels(char, fontName) {
 
     // Handle characters that produce no visible pixels
     if (bounds.minX > bounds.maxX || bounds.minY > bounds.maxY) {
-      const width = Math.ceil(metrics.widthInCells * 0.8); // Empty glyph width relative to X width
+      const width = Math.ceil(metrics.widthInCells * 0.3); // Empty glyph width relative to X width
       return { pixels: [], width, height: metrics.heightInCells };
     }
 
@@ -292,8 +297,12 @@ function getCharPixels(char, fontName) {
     const widthInCells = cellBounds.maxX - cellBounds.minX + 1;
     const heightInCells = cellBounds.maxY - cellBounds.minY + 1;
 
-    if (heightInCells > 11) {
-      const fontSize = findFontSizeForTargetHeight(fontName, char, 11);
+    if (heightInCells > SCREEN_HEIGHT) {
+      const fontSize = findFontSizeForTargetHeight(
+        fontName,
+        char,
+        SCREEN_HEIGHT
+      );
       const charData = getScaledCharPixels(char, fontName, fontSize);
       charCache.set(key, charData);
       return charData;
@@ -325,12 +334,12 @@ export function setFont(fontName) {
   renderTestChar(fontName);
 }
 
-export function textToPixels(text, fontName, targetHeight = 11) {
+export function textToPixels(text, fontName, center = false) {
   if (!text) {
     currentChar.value = "X";
-    return Array(targetHeight)
+    return Array(SCREEN_HEIGHT)
       .fill()
-      .map(() => Array(1).fill(false));
+      .map(() => Array(SCREEN_WIDTH).fill(false));
   }
 
   currentChar.value = text[text.length - 1];
@@ -340,27 +349,66 @@ export function textToPixels(text, fontName, targetHeight = 11) {
   // Calculate total width with 1px gaps between chars
   const totalWidth = chars.reduce((sum, char) => sum + char.width + 1, 0) - 1;
 
-  const result = Array(targetHeight)
-    .fill()
-    .map(() => Array(totalWidth).fill(false));
+  // Use screen width for centered text, full width for scrolling
+  const resultWidth = center ? SCREEN_WIDTH : totalWidth;
 
-  let xOffset = 0;
+  // Create result array with appropriate width
+  const result = Array(SCREEN_HEIGHT)
+    .fill()
+    .map(() => Array(resultWidth).fill(false));
+
+  // Center the text if requested
+  let xOffset = center
+    ? Math.floor((SCREEN_WIDTH - Math.min(totalWidth, SCREEN_WIDTH)) / 2)
+    : 0;
+
+  console.log("Debug textToPixels:", {
+    text,
+    totalWidth,
+    resultWidth,
+    xOffset,
+    center,
+    chars: chars.map((c) => ({
+      width: c.width,
+      height: c.height,
+      hasPixels: c.pixels.length > 0,
+    })),
+  });
+
   for (const char of chars) {
+    // Check if character would fit entirely when centering
+    if (center && xOffset + char.width > SCREEN_WIDTH) {
+      console.log("Character won't fit, breaking at:", xOffset);
+      break;
+    }
+
     if (!char.pixels.length) {
+      console.log("Empty char, advancing by:", char.width + 1);
       xOffset += char.width + 1;
       continue;
     }
 
     const yOffset =
-      metrics.heightInCells > 11
-        ? targetHeight - char.height
-        : (metrics.heightInCells <= 11
+      metrics.heightInCells > SCREEN_HEIGHT
+        ? SCREEN_HEIGHT - char.height
+        : (metrics.heightInCells <= SCREEN_HEIGHT
             ? metrics.heightInCells - char.height
-            : 0) + Math.floor((targetHeight - metrics.heightInCells) / 2);
+            : 0) + Math.floor((SCREEN_HEIGHT - metrics.heightInCells) / 2);
 
-    for (let y = 0; y < char.pixels.length && y + yOffset < targetHeight; y++) {
-      for (let x = 0; x < char.width && xOffset + x < totalWidth; x++) {
-        if (y + yOffset >= 0 && y + yOffset < targetHeight) {
+    console.log("Rendering char at:", {
+      xOffset,
+      yOffset,
+      charWidth: char.width,
+      charHeight: char.height,
+    });
+
+    for (
+      let y = 0;
+      y < char.pixels.length && y + yOffset < SCREEN_HEIGHT;
+      y++
+    ) {
+      for (let x = 0; x < char.width && xOffset + x < resultWidth; x++) {
+        if (y + yOffset >= 0 && y + yOffset < SCREEN_HEIGHT) {
           result[y + yOffset][xOffset + x] = char.pixels[y][x];
         }
       }
