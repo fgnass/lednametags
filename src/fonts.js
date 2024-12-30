@@ -1,49 +1,9 @@
 import { signal } from "@preact/signals";
 
-// ============================================================================
-// Canvas Setup and Configuration
-// ============================================================================
-
-function setupDebugCanvases() {
-  // Create debug canvas
-  const canvas = document.createElement("canvas");
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-
-  // Set canvas size and style
-  canvas.width = 200;
-  canvas.height = 200;
-  canvas.style.cssText =
-    "position: fixed; bottom: 20px; right: 20px; background: #000; border: 1px solid #333; image-rendering: pixelated;";
-
-  // Create second canvas for scaled preview
-  const scaledCanvas = document.createElement("canvas");
-  const scaledCtx = scaledCanvas.getContext("2d", { willReadFrequently: true });
-  scaledCanvas.width = 200;
-  scaledCanvas.height = 200;
-  scaledCanvas.style.cssText =
-    "position: fixed; bottom: 20px; right: 240px; background: #000; border: 1px solid #333; image-rendering: pixelated;";
-
-  // Configure canvas rendering settings
-  ctx.imageSmoothingEnabled = false;
-  ctx.textRendering = "geometricPrecision";
-  ctx.fontKerning = "none";
-  ctx.fontStretch = "normal";
-  ctx.letterSpacing = "0px";
-
-  scaledCtx.imageSmoothingEnabled = true;
-  scaledCtx.textRendering = "geometricPrecision";
-  scaledCtx.fontKerning = "none";
-  scaledCtx.fontStretch = "normal";
-  scaledCtx.letterSpacing = "0px";
-
-  return { canvas, ctx, scaledCanvas, scaledCtx };
-}
-
-const { canvas, ctx, scaledCanvas, scaledCtx } = setupDebugCanvases();
-
-// ============================================================================
-// State Management
-// ============================================================================
+const canvas = document.createElement("canvas");
+const ctx = canvas.getContext("2d");
+canvas.width = 200;
+canvas.height = 200;
 
 // Cache for character pixel data and font metrics
 const charCache = new Map();
@@ -53,10 +13,6 @@ const fontMetricsCache = new Map();
 export const fonts = signal([]);
 export const currentFont = signal("monospace");
 export const currentChar = signal("X");
-
-// ============================================================================
-// Font Loading
-// ============================================================================
 
 // Get all TTF files from /public/fonts
 const fontFiles = import.meta.glob("/public/fonts/*.{ttf,otf,woff2}", {
@@ -199,7 +155,8 @@ function findCellBounds(cells) {
 // Canvas Utilities
 // ============================================================================
 
-function setupCanvasForText(ctx, fontName, fontSize = 160) {
+function setupCanvasForText(ctx, fontName, fontSize = 160, smoothing = false) {
+  ctx.imageSmoothingEnabled = smoothing;
   ctx.fillStyle = "black";
   ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   ctx.fillStyle = "white";
@@ -229,19 +186,14 @@ function findFontSizeForTargetHeight(fontName, char, targetHeight) {
   const maxIterations = 10;
 
   while (iterations < maxIterations) {
-    setupCanvasForText(scaledCtx, fontName, fontSize);
-    scaledCtx.fillText(char, 20, Math.round(scaledCanvas.height * 0.7));
+    setupCanvasForText(ctx, fontName, fontSize, true);
+    ctx.fillText(char, 20, Math.round(canvas.height * 0.7));
 
-    const imageData = scaledCtx.getImageData(
-      0,
-      0,
-      scaledCanvas.width,
-      scaledCanvas.height
-    );
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const { minY, maxY } = findImageBounds(
       imageData,
-      scaledCanvas.width,
-      scaledCanvas.height
+      canvas.width,
+      canvas.height
     );
     const height = maxY - minY + 1;
 
@@ -259,7 +211,7 @@ function findFontSizeForTargetHeight(fontName, char, targetHeight) {
 }
 
 function renderTestChar(fontName, text = "X") {
-  setupCanvasForText(ctx, fontName);
+  setupCanvasForText(ctx, fontName, 160, false);
 
   // Draw text
   let x = 20;
@@ -315,19 +267,14 @@ function renderTestChar(fontName, text = "X") {
 }
 
 function getScaledCharPixels(char, fontName, fontSize) {
-  setupCanvasForText(scaledCtx, fontName, fontSize);
-  scaledCtx.fillText(char, 20, Math.round(scaledCanvas.height * 0.7));
+  setupCanvasForText(ctx, fontName, fontSize, true);
+  ctx.fillText(char, 20, Math.round(canvas.height * 0.7));
 
-  const imageData = scaledCtx.getImageData(
-    0,
-    0,
-    scaledCanvas.width,
-    scaledCanvas.height
-  );
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const { minX, maxX, minY, maxY } = findImageBounds(
     imageData,
-    scaledCanvas.width,
-    scaledCanvas.height
+    canvas.width,
+    canvas.height
   );
 
   const width = maxX - minX + 1;
@@ -336,7 +283,7 @@ function getScaledCharPixels(char, fontName, fontSize) {
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      const i = ((y + minY) * scaledCanvas.width + (x + minX)) * 4;
+      const i = ((y + minY) * canvas.width + (x + minX)) * 4;
       pixels[y][x] = isPixelOn(imageData.data, i);
     }
   }
