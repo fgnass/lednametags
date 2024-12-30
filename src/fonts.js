@@ -20,6 +20,12 @@ scaledCanvas.style.cssText =
   "position: fixed; bottom: 20px; right: 240px; background: #000; border: 1px solid #333; image-rendering: pixelated;";
 document.body.appendChild(scaledCanvas);
 
+// Cache for character pixel data
+const charCache = new Map();
+
+// Cache for font metrics (grid size from X)
+const fontMetricsCache = new Map();
+
 // Ensure crisp rendering
 ctx.imageSmoothingEnabled = false;
 ctx.textRendering = "geometricPrecision";
@@ -206,8 +212,16 @@ function renderTestChar(fontName, text = "X") {
   ctx.lineTo(canvas.width, maxY + 0.5);
   ctx.stroke();
 
-  // Detect grid size
-  const gridSize = detectGrid(imageData, minX, maxX, minY, maxY);
+  // Get grid size - only detect from "X" and cache it, use cached value for other chars
+  let gridSize;
+  if (text === "X") {
+    gridSize = detectGrid(imageData, minX, maxX, minY, maxY);
+    fontMetricsCache.set(fontName, gridSize);
+  } else {
+    gridSize =
+      fontMetricsCache.get(fontName) ||
+      detectGrid(imageData, minX, maxX, minY, maxY);
+  }
 
   // Draw grid
   ctx.strokeStyle = "blue";
@@ -262,8 +276,6 @@ function renderTestChar(fontName, text = "X") {
   const widthInCells = maxCellX - minCellX + 1;
   const heightInCells = maxCellY - minCellY + 1;
 
-  //console.log(`${fontName} "${text}": ${widthInCells}x${heightInCells} cells`);
-
   // Return all the data we gathered
   return {
     gridSize,
@@ -288,12 +300,6 @@ currentFont.subscribe((fontName) =>
   renderTestChar(fontName, currentChar.value)
 );
 currentChar.subscribe((char) => renderTestChar(currentFont.value, char));
-
-// Cache for character pixel data
-const charCache = new Map();
-
-// Cache for font metrics (grid size from X)
-const fontMetricsCache = new Map();
 
 // Function to get font metrics using X as reference
 function getFontMetrics(fontName) {
