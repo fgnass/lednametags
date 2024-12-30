@@ -459,11 +459,17 @@ export function textToPixels(text, fontName, targetHeight = 11) {
   for (const char of chars) {
     if (!char.pixels.length) continue; // Skip empty characters
 
-    const shift =
-      metrics.heightInCells <= 11 ? metrics.heightInCells - char.height : 0;
-    const yOffset =
-      shift +
-      Math.floor(Math.max(0, (targetHeight - metrics.heightInCells) / 2));
+    // Calculate vertical position based on font height
+    let yOffset;
+    if (metrics.heightInCells > 11) {
+      // For tall fonts, align to bottom
+      yOffset = targetHeight - char.height;
+    } else {
+      // For small fonts, use shift logic to align within their natural height
+      const shift =
+        metrics.heightInCells <= 11 ? metrics.heightInCells - char.height : 0;
+      yOffset = shift + Math.floor((targetHeight - metrics.heightInCells) / 2);
+    }
 
     for (let y = 0; y < char.pixels.length && y + yOffset < targetHeight; y++) {
       for (let x = 0; x < char.width && xOffset + x < totalWidth; x++) {
