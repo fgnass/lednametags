@@ -3,32 +3,14 @@ import { DisplayMode, SPEED_FPS } from "./constants";
 import { textToPixels, fonts, currentFont } from "./fonts";
 import { calculateBankMemory, DEVICE_MEMORY } from "./utils";
 
-// Helper to ensure we always create proper 2D arrays
-function create2DArray(rows, cols) {
-  return Array(rows)
-    .fill()
-    .map(() => Array(cols).fill(false));
-}
-
-// Helper to ensure loaded bank data has proper arrays
-function ensureBankArrays(bank) {
-  if (!bank) return createBank();
-  return {
-    ...bank,
-    pixels: Array.isArray(bank.pixels)
-      ? bank.pixels.map((row) =>
-          Array.isArray(row) ? [...row] : Array(row.length).fill(false)
-        )
-      : create2DArray(11, 44),
-  };
-}
-
 // Bank data structure
 function createBank() {
   return {
     mode: DisplayMode.STATIC,
     text: "",
-    pixels: create2DArray(11, 44),
+    pixels: Array(11)
+      .fill()
+      .map(() => Array(44).fill(false)),
     currentFrame: 0,
     viewport: 0,
     speed: 7, // Default speed (7 = 7.5 fps)
@@ -48,7 +30,7 @@ const savedState = JSON.parse(
 // Create a signal for each bank
 export const banks = Array(8)
   .fill()
-  .map((_, i) => signal(ensureBankArrays(savedState?.banks[i])));
+  .map((_, i) => signal(savedState?.banks[i] || createBank()));
 
 // Restore current bank
 if (savedState?.currentBank != null) {
@@ -108,7 +90,9 @@ function startPlayback() {
     data.mode === DisplayMode.SCROLL_DOWN
   ) {
     // Create a double-height array for smooth scrolling
-    const blankRows = create2DArray(11, data.pixels[0].length);
+    const blankRows = Array(11)
+      .fill()
+      .map(() => Array(data.pixels[0].length).fill(false));
 
     // For scroll up, add blank rows at the top
     if (data.mode === DisplayMode.SCROLL_UP) {
@@ -212,10 +196,7 @@ export const bankHasData = computed(() =>
   banks.map((bank) => {
     const data = bank.value;
     return (
-      (Array.isArray(data.pixels) &&
-        data.pixels.some(
-          (row) => Array.isArray(row) && row.some((pixel) => pixel)
-        )) ||
+      data.pixels.some((row) => row.some((pixel) => pixel)) ||
       Boolean(data.text.trim())
     );
   })
@@ -305,7 +286,9 @@ export function clearImage() {
       return newRow;
     });
   } else {
-    data.pixels = create2DArray(11, 88);
+    data.pixels = Array(11)
+      .fill()
+      .map(() => Array(88).fill(false));
     data.viewport = 0; // Reset viewport to 0
   }
 
