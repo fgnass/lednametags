@@ -296,6 +296,9 @@ export function setText(text) {
       // Text fits on screen, reset viewport
       data.viewport = 0;
     }
+  } else {
+    // For non-scrolling modes, always reset viewport
+    data.viewport = 0;
   }
 
   bank.value = data;

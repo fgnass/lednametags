@@ -349,39 +349,55 @@ export function textToPixels(text, fontName, center = false) {
   // Calculate total width with 1px gaps between chars
   const totalWidth = chars.reduce((sum, char) => sum + char.width + 1, 0) - 1;
 
-  // Use screen width for centered text, full width for scrolling
+  // In scroll mode, use full width. In centered mode, use screen width
   const resultWidth = center ? SCREEN_WIDTH : totalWidth;
-
-  // Create result array with appropriate width
   const result = Array(SCREEN_HEIGHT)
     .fill()
     .map(() => Array(resultWidth).fill(false));
 
+  // For centered text, first calculate how many chars will fit
+  let fittingWidth = 0;
+  let fittingChars = 0;
+  let width = 0;
+
+  if (center) {
+    for (const char of chars) {
+      width += char.width + 1;
+      if (width - 1 <= SCREEN_WIDTH) {
+        fittingWidth = width - 1;
+        fittingChars++;
+      } else {
+        break;
+      }
+    }
+  } else {
+    fittingChars = chars.length;
+    fittingWidth = totalWidth;
+  }
+
   // Center the text if requested
-  let xOffset = center
-    ? Math.floor((SCREEN_WIDTH - Math.min(totalWidth, SCREEN_WIDTH)) / 2)
-    : 0;
+  let xOffset = center ? Math.floor((SCREEN_WIDTH - fittingWidth) / 2) : 0;
 
   console.log("Debug textToPixels:", {
     text,
-    totalWidth,
-    resultWidth,
-    xOffset,
     center,
-    chars: chars.map((c) => ({
+    xOffset,
+    screenWidth: SCREEN_WIDTH,
+    resultWidth,
+    fittingChars,
+    fittingWidth,
+    chars: chars.slice(0, fittingChars).map((c, i) => ({
+      index: i,
+      char: text[i],
       width: c.width,
       height: c.height,
       hasPixels: c.pixels.length > 0,
+      wouldEndAt: xOffset + c.width,
     })),
   });
 
-  for (const char of chars) {
-    // Check if character would fit entirely when centering
-    if (center && xOffset + char.width > SCREEN_WIDTH) {
-      console.log("Character won't fit, breaking at:", xOffset);
-      break;
-    }
-
+  for (let i = 0; i < fittingChars; i++) {
+    const char = chars[i];
     if (!char.pixels.length) {
       console.log("Empty char, advancing by:", char.width + 1);
       xOffset += char.width + 1;
@@ -400,6 +416,7 @@ export function textToPixels(text, fontName, center = false) {
       yOffset,
       charWidth: char.width,
       charHeight: char.height,
+      wouldEndAt: xOffset + char.width,
     });
 
     for (
