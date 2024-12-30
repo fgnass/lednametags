@@ -213,15 +213,7 @@ function renderTestChar(fontName, text = "X") {
   ctx.stroke();
 
   // Get grid size - only detect from "X" and cache it, use cached value for other chars
-  let gridSize;
-  if (text === "X") {
-    gridSize = detectGrid(imageData, minX, maxX, minY, maxY);
-    fontMetricsCache.set(fontName, gridSize);
-  } else {
-    gridSize =
-      fontMetricsCache.get(fontName) ||
-      detectGrid(imageData, minX, maxX, minY, maxY);
-  }
+  const gridSize = detectGrid(imageData, minX, maxX, minY, maxY);
 
   // Draw grid
   ctx.strokeStyle = "blue";
@@ -308,9 +300,9 @@ function getFontMetrics(fontName) {
   }
 
   // Use renderTestChar to get grid size
-  const { gridSize } = renderTestChar(fontName, "X");
-  fontMetricsCache.set(fontName, gridSize);
-  return gridSize;
+  const metrics = renderTestChar(fontName, "X");
+  fontMetricsCache.set(fontName, metrics);
+  return metrics;
 }
 
 // Function to get character pixel data (from cache or generate)
@@ -367,7 +359,7 @@ function getCharPixels(char, fontName) {
     // Create pixel array directly from image data
     const width = maxX - minX + 1;
     const height = maxY - minY + 1;
-    const pixels = Array(height)
+    const pixels = Array(heightInCells)
       .fill()
       .map(() => Array(width).fill(false));
 
@@ -379,7 +371,7 @@ function getCharPixels(char, fontName) {
       }
     }
 
-    const charData = { pixels, width };
+    const charData = { pixels, width, height };
     charCache.set(key, charData);
     return charData;
   }
@@ -397,7 +389,7 @@ function getCharPixels(char, fontName) {
     pixels[cellY][cellX] = true;
   }
 
-  const charData = { pixels, width: widthInCells };
+  const charData = { pixels, width: widthInCells, height: heightInCells };
   charCache.set(key, charData);
   return charData;
 }
@@ -420,6 +412,8 @@ export function textToPixels(text, fontName, targetHeight = 11) {
   // Calculate total width
   const totalWidth = chars.reduce((sum, char) => sum + char.width + 1, 0) - 1; // Add 1px gaps, but not after last char
 
+  const metrics = getFontMetrics(fontName);
+  console.log({ metrics });
   // Create result matrix
   const result = Array(targetHeight)
     .fill()
@@ -430,70 +424,21 @@ export function textToPixels(text, fontName, targetHeight = 11) {
   for (const char of chars) {
     if (!char.pixels.length) continue; // Skip empty characters
 
-    // Only scale if character is too tall
-    if (char.pixels.length > targetHeight) {
-      const scale = char.pixels.length / targetHeight;
-      const scaledHeight = targetHeight;
-      const scaledWidth = Math.ceil(char.width / scale);
-      const yOffset = 0;
+    const shift =
+      metrics.heightInCells <= 11 ? metrics.heightInCells - char.height : 0;
+    const yOffset =
+      shift +
+      Math.floor(Math.max(0, (targetHeight - metrics.heightInCells) / 2));
 
-      console.log(
-        `Scaling: original=${char.width}x${
-          char.pixels.length
-        }, scale=${scale.toFixed(2)}, ` +
-          `scaled=${scaledWidth}x${scaledHeight}, yOffset=${yOffset}, targetHeight=${targetHeight}`
-      );
-
-      // Copy character pixels with scaling
-      for (let y = 0; y < scaledHeight && y + yOffset < targetHeight; y++) {
-        // Calculate source y range for this scaled pixel
-        const srcStartY = Math.floor(y * scale);
-        const srcEndY = Math.min(
-          Math.ceil((y + 1) * scale),
-          char.pixels.length
-        );
-
-        console.log(
-          `  y=${y}: sampling source rows ${srcStartY}-${srcEndY - 1}, ` +
-            `output row=${y + yOffset}`
-        );
-
-        for (let x = 0; x < scaledWidth && xOffset + x < totalWidth; x++) {
-          // Calculate source x range for this scaled pixel
-          const srcStartX = Math.floor(x * scale);
-          const srcEndX = Math.min(Math.ceil((x + 1) * scale), char.width);
-
-          // Sample all pixels in the source range
-          let isOn = false;
-          for (let srcY = srcStartY; srcY < srcEndY && !isOn; srcY++) {
-            for (let srcX = srcStartX; srcX < srcEndX && !isOn; srcX++) {
-              if (char.pixels[srcY][srcX]) {
-                isOn = true;
-              }
-            }
-          }
-          if (y + yOffset >= 0 && y + yOffset < targetHeight) {
-            result[y + yOffset][xOffset + x] = isOn;
-          }
+    for (let y = 0; y < char.pixels.length && y + yOffset < targetHeight; y++) {
+      for (let x = 0; x < char.width && xOffset + x < totalWidth; x++) {
+        if (y + yOffset >= 0 && y + yOffset < targetHeight) {
+          result[y + yOffset][xOffset + x] = char.pixels[y][x];
         }
       }
-      xOffset += scaledWidth + 1; // Add 1px gap between characters
-    } else {
-      // No scaling needed, copy directly
-      const yOffset = Math.max(0, targetHeight - char.pixels.length);
-      for (
-        let y = 0;
-        y < char.pixels.length && y + yOffset < targetHeight;
-        y++
-      ) {
-        for (let x = 0; x < char.width && xOffset + x < totalWidth; x++) {
-          if (y + yOffset >= 0 && y + yOffset < targetHeight) {
-            result[y + yOffset][xOffset + x] = char.pixels[y][x];
-          }
-        }
-      }
-      xOffset += char.width + 1; // Add 1px gap between characters
     }
+
+    xOffset += char.width + 1; // Add 1px gap between characters
   }
 
   return result;
