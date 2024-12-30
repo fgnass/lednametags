@@ -1,43 +1,62 @@
 import { signal } from "@preact/signals";
 
-// Create debug canvas
-const canvas = document.createElement("canvas");
-const ctx = canvas.getContext("2d", { willReadFrequently: true });
+// ============================================================================
+// Canvas Setup and Configuration
+// ============================================================================
 
-// Set canvas size and style
-canvas.width = 200;
-canvas.height = 200;
-canvas.style.cssText =
-  "position: fixed; bottom: 20px; right: 20px; background: #000; border: 1px solid #333; image-rendering: pixelated;";
-document.body.appendChild(canvas);
+function setupDebugCanvases() {
+  // Create debug canvas
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
 
-// Create second canvas for scaled preview
-const scaledCanvas = document.createElement("canvas");
-const scaledCtx = scaledCanvas.getContext("2d", { willReadFrequently: true });
-scaledCanvas.width = 200;
-scaledCanvas.height = 200;
-scaledCanvas.style.cssText =
-  "position: fixed; bottom: 20px; right: 240px; background: #000; border: 1px solid #333; image-rendering: pixelated;";
-document.body.appendChild(scaledCanvas);
+  // Set canvas size and style
+  canvas.width = 200;
+  canvas.height = 200;
+  canvas.style.cssText =
+    "position: fixed; bottom: 20px; right: 20px; background: #000; border: 1px solid #333; image-rendering: pixelated;";
 
-// Cache for character pixel data
+  // Create second canvas for scaled preview
+  const scaledCanvas = document.createElement("canvas");
+  const scaledCtx = scaledCanvas.getContext("2d", { willReadFrequently: true });
+  scaledCanvas.width = 200;
+  scaledCanvas.height = 200;
+  scaledCanvas.style.cssText =
+    "position: fixed; bottom: 20px; right: 240px; background: #000; border: 1px solid #333; image-rendering: pixelated;";
+
+  // Configure canvas rendering settings
+  ctx.imageSmoothingEnabled = false;
+  ctx.textRendering = "geometricPrecision";
+  ctx.fontKerning = "none";
+  ctx.fontStretch = "normal";
+  ctx.letterSpacing = "0px";
+
+  scaledCtx.imageSmoothingEnabled = true;
+  scaledCtx.textRendering = "geometricPrecision";
+  scaledCtx.fontKerning = "none";
+  scaledCtx.fontStretch = "normal";
+  scaledCtx.letterSpacing = "0px";
+
+  return { canvas, ctx, scaledCanvas, scaledCtx };
+}
+
+const { canvas, ctx, scaledCanvas, scaledCtx } = setupDebugCanvases();
+
+// ============================================================================
+// State Management
+// ============================================================================
+
+// Cache for character pixel data and font metrics
 const charCache = new Map();
-
-// Cache for font metrics (grid size from X)
 const fontMetricsCache = new Map();
 
-// Ensure crisp rendering
-ctx.imageSmoothingEnabled = false;
-ctx.textRendering = "geometricPrecision";
-ctx.fontKerning = "none";
-ctx.fontStretch = "normal";
-ctx.letterSpacing = "0px";
+// Reactive signals for font state
+export const fonts = signal([]);
+export const currentFont = signal("monospace");
+export const currentChar = signal("X");
 
-scaledCtx.imageSmoothingEnabled = true;
-scaledCtx.textRendering = "geometricPrecision";
-scaledCtx.fontKerning = "none";
-scaledCtx.fontStretch = "normal";
-scaledCtx.letterSpacing = "0px";
+// ============================================================================
+// Font Loading
+// ============================================================================
 
 // Get all TTF files from /public/fonts
 const fontFiles = import.meta.glob("/public/fonts/*.{ttf,otf,woff2}", {
@@ -61,17 +80,14 @@ const fontLoadingPromises = Object.entries(fontFiles).map(([path, url]) => {
   });
 });
 
-// Export reactive signals for fonts
-export const fonts = signal([]);
-export const currentFont = signal("monospace");
-export const currentChar = signal("X");
+// ============================================================================
+// Pixel Detection Utilities
+// ============================================================================
 
-// Function to check if a pixel is "on" (avoid anti-aliasing artifacts)
 function isPixelOn(data, i) {
   return data[i] > 90; // Only consider nearly white pixels
 }
 
-// Function to find smallest transition distance
 function findSmallestTransition(imageData, minX, maxX, minY, maxY) {
   let smallestDistance = Infinity;
 
@@ -122,7 +138,6 @@ function findSmallestTransition(imageData, minX, maxX, minY, maxY) {
   return smallestDistance;
 }
 
-// Function to detect pixel grid
 function detectGrid(imageData, minX, maxX, minY, maxY) {
   // Find initial grid size from smallest transition
   let gridSize = findSmallestTransition(imageData, minX, maxX, minY, maxY);
@@ -138,7 +153,70 @@ function detectGrid(imageData, minX, maxX, minY, maxY) {
   return gridSize;
 }
 
-// Function to render test character with current font and return cell data
+// ============================================================================
+// Character Rendering
+// ============================================================================
+
+function findFontSizeForTargetHeight(fontName, char, targetHeight) {
+  // Start with a reasonable size
+  let fontSize = 30;
+  let lastHeight = 0;
+  let iterations = 0;
+  const maxIterations = 10;
+
+  while (iterations < maxIterations) {
+    // Draw character with current font size
+    scaledCtx.fillStyle = "black";
+    scaledCtx.fillRect(0, 0, scaledCanvas.width, scaledCanvas.height);
+    scaledCtx.fillStyle = "white";
+    scaledCtx.font = `${fontSize}px "${fontName}"`;
+    scaledCtx.textBaseline = "alphabetic";
+    scaledCtx.textAlign = "left";
+    scaledCtx.fillText(char, 20, Math.round(scaledCanvas.height * 0.7));
+
+    // Get image data and find bounds
+    const imageData = scaledCtx.getImageData(
+      0,
+      0,
+      scaledCanvas.width,
+      scaledCanvas.height
+    );
+    let minY = scaledCanvas.height;
+    let maxY = 0;
+
+    for (let y = 0; y < scaledCanvas.height; y++) {
+      for (let x = 0; x < scaledCanvas.width; x++) {
+        const i = (y * scaledCanvas.width + x) * 4;
+        if (isPixelOn(imageData.data, i)) {
+          minY = Math.min(minY, y);
+          maxY = Math.max(maxY, y);
+        }
+      }
+    }
+
+    const height = maxY - minY + 1;
+
+    // Check if we hit the target
+    if (height === targetHeight) {
+      return fontSize;
+    }
+
+    // Adjust font size proportionally
+    const newFontSize = Math.round(fontSize * (targetHeight / height));
+
+    // If we're oscillating or not making progress, exit
+    if (newFontSize === fontSize || newFontSize === lastHeight) {
+      return fontSize;
+    }
+
+    lastHeight = fontSize;
+    fontSize = newFontSize;
+    iterations++;
+  }
+
+  return fontSize;
+}
+
 function renderTestChar(fontName, text = "X") {
   // Draw test character
   ctx.fillStyle = "black";
@@ -183,17 +261,6 @@ function renderTestChar(fontName, text = "X") {
         maxX = Math.max(maxX, x);
         minY = Math.min(minY, y);
         maxY = Math.max(maxY, y);
-      }
-    }
-  }
-
-  // Draw debug visualization
-  ctx.fillStyle = "rgba(255, 0, 0, 0.3)";
-  for (let y = 0; y < canvas.height; y++) {
-    for (let x = 0; x < canvas.width; x++) {
-      const i = (y * canvas.width + x) * 4;
-      if (isPixelOn(imageData.data, i)) {
-        ctx.fillRect(x, y, 1, 1);
       }
     }
   }
@@ -250,17 +317,9 @@ function renderTestChar(fontName, text = "X") {
   };
 }
 
-// Export function to update current font
-export function setFont(fontName) {
-  currentFont.value = fontName;
-  renderTestChar(fontName);
-}
-
-// Subscribe to font and char changes to update debug canvas
-currentFont.subscribe((fontName) =>
-  renderTestChar(fontName, currentChar.value)
-);
-currentChar.subscribe((char) => renderTestChar(currentFont.value, char));
+// ============================================================================
+// Public API
+// ============================================================================
 
 // Function to get font metrics using X as reference
 function getFontMetrics(fontName) {
@@ -363,7 +422,11 @@ function getCharPixels(char, fontName) {
   return charData;
 }
 
-// Function to render text to pixel matrix
+export function setFont(fontName) {
+  currentFont.value = fontName;
+  renderTestChar(fontName);
+}
+
 export function textToPixels(text, fontName, targetHeight = 11) {
   if (!text) {
     currentChar.value = "X";
@@ -413,6 +476,16 @@ export function textToPixels(text, fontName, targetHeight = 11) {
   return result;
 }
 
+// ============================================================================
+// Initialization
+// ============================================================================
+
+// Subscribe to font and char changes to update debug canvas
+currentFont.subscribe((fontName) =>
+  renderTestChar(fontName, currentChar.value)
+);
+currentChar.subscribe((char) => renderTestChar(currentFont.value, char));
+
 // Wait for all fonts to load, then update fonts array and render first font
 Promise.all(fontLoadingPromises).then((loadedFonts) => {
   fonts.value = loadedFonts;
@@ -420,64 +493,3 @@ Promise.all(fontLoadingPromises).then((loadedFonts) => {
     setFont(loadedFonts[0]);
   }
 });
-
-// Function to find font size that makes X match target height
-function findFontSizeForTargetHeight(fontName, char, targetHeight) {
-  // Start with a reasonable size
-  let fontSize = 30;
-  let lastHeight = 0;
-  let iterations = 0;
-  const maxIterations = 10;
-
-  while (iterations < maxIterations) {
-    // Draw character with current font size
-    scaledCtx.fillStyle = "black";
-    scaledCtx.fillRect(0, 0, scaledCanvas.width, scaledCanvas.height);
-    scaledCtx.fillStyle = "white";
-    scaledCtx.font = `${fontSize}px "${fontName}"`;
-    scaledCtx.textBaseline = "alphabetic";
-    scaledCtx.textAlign = "left";
-    scaledCtx.fillText(char, 20, Math.round(scaledCanvas.height * 0.7));
-
-    // Get image data and find bounds
-    const imageData = scaledCtx.getImageData(
-      0,
-      0,
-      scaledCanvas.width,
-      scaledCanvas.height
-    );
-    let minY = scaledCanvas.height;
-    let maxY = 0;
-
-    for (let y = 0; y < scaledCanvas.height; y++) {
-      for (let x = 0; x < scaledCanvas.width; x++) {
-        const i = (y * scaledCanvas.width + x) * 4;
-        if (isPixelOn(imageData.data, i)) {
-          minY = Math.min(minY, y);
-          maxY = Math.max(maxY, y);
-        }
-      }
-    }
-
-    const height = maxY - minY + 1;
-
-    // Check if we hit the target
-    if (height === targetHeight) {
-      return fontSize;
-    }
-
-    // Adjust font size proportionally
-    const newFontSize = Math.round(fontSize * (targetHeight / height));
-
-    // If we're oscillating or not making progress, exit
-    if (newFontSize === fontSize || newFontSize === lastHeight) {
-      return fontSize;
-    }
-
-    lastHeight = fontSize;
-    fontSize = newFontSize;
-    iterations++;
-  }
-
-  return fontSize;
-}
