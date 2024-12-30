@@ -198,35 +198,8 @@ function renderTestChar(fontName, text = "X") {
     }
   }
 
-  // Draw bounds
-  ctx.strokeStyle = "red";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(minX + 0.5, 0);
-  ctx.lineTo(minX + 0.5, canvas.height);
-  ctx.moveTo(maxX + 0.5, 0);
-  ctx.lineTo(maxX + 0.5, canvas.height);
-  ctx.moveTo(0, minY + 0.5);
-  ctx.lineTo(canvas.width, minY + 0.5);
-  ctx.moveTo(0, maxY + 0.5);
-  ctx.lineTo(canvas.width, maxY + 0.5);
-  ctx.stroke();
-
   // Get grid size - only detect from "X" and cache it, use cached value for other chars
   const gridSize = detectGrid(imageData, minX, maxX, minY, maxY);
-
-  // Draw grid
-  ctx.strokeStyle = "blue";
-  ctx.beginPath();
-  for (let x = minX; x <= maxX; x += gridSize) {
-    ctx.moveTo(x + 0.5, 0);
-    ctx.lineTo(x + 0.5, canvas.height);
-  }
-  for (let y = minY; y <= maxY; y += gridSize) {
-    ctx.moveTo(0, y + 0.5);
-    ctx.lineTo(canvas.width, y + 0.5);
-  }
-  ctx.stroke();
 
   // Collect occupied cells and draw sample points
   const cells = new Set();
@@ -236,10 +209,6 @@ function renderTestChar(fontName, text = "X") {
       const centerY = y + Math.floor(gridSize / 2);
       const i = (centerY * canvas.width + centerX) * 4;
       const isOn = isPixelOn(imageData.data, i);
-
-      // Draw sample point
-      ctx.fillStyle = isOn ? "lime" : "red";
-      ctx.fillRect(centerX - 1, centerY - 1, 3, 3);
 
       // Store cell if occupied
       if (isOn) {
@@ -413,7 +382,7 @@ export function textToPixels(text, fontName, targetHeight = 11) {
   const totalWidth = chars.reduce((sum, char) => sum + char.width + 1, 0) - 1; // Add 1px gaps, but not after last char
 
   const metrics = getFontMetrics(fontName);
-  console.log({ metrics });
+
   // Create result matrix
   const result = Array(targetHeight)
     .fill()
@@ -491,7 +460,6 @@ function findFontSizeForTargetHeight(fontName, char, targetHeight) {
     }
 
     const height = maxY - minY + 1;
-    console.log(`Font size ${fontSize}px -> height ${height}px`);
 
     // Check if we hit the target
     if (height === targetHeight) {
