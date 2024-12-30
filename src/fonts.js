@@ -12,16 +12,12 @@ function setupDebugCanvases() {
   // Set canvas size and style
   canvas.width = 200;
   canvas.height = 200;
-  canvas.style.cssText =
-    "position: fixed; bottom: 20px; right: 20px; background: #000; border: 1px solid #333; image-rendering: pixelated;";
 
   // Create second canvas for scaled preview
   const scaledCanvas = document.createElement("canvas");
   const scaledCtx = scaledCanvas.getContext("2d", { willReadFrequently: true });
   scaledCanvas.width = 200;
   scaledCanvas.height = 200;
-  scaledCanvas.style.cssText =
-    "position: fixed; bottom: 20px; right: 240px; background: #000; border: 1px solid #333; image-rendering: pixelated;";
 
   // Configure canvas rendering settings
   ctx.imageSmoothingEnabled = false;
@@ -350,8 +346,44 @@ function getCharPixels(char, fontName) {
     return charCache.get(key);
   }
 
-  const data = renderTestChar(fontName, char);
-  const { widthInCells, heightInCells, cells, minCellX, minCellY } = data;
+  // Get grid size from X
+  const metrics = getFontMetrics(fontName);
+  const gridSize = metrics.gridSize;
+
+  // Draw the character
+  setupCanvasForText(ctx, fontName);
+  let x = 20;
+  const y = Math.round(canvas.height * 0.7);
+  ctx.fillText(char, x, y);
+
+  // Process image data
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const { minX, maxX, minY, maxY } = findImageBounds(
+    imageData,
+    canvas.width,
+    canvas.height
+  );
+
+  // Collect cells using the grid size from X
+  const cells = new Set();
+  for (let y = minY; y <= maxY; y += gridSize) {
+    for (let x = minX; x <= maxX; x += gridSize) {
+      const centerX = x + Math.floor(gridSize / 2);
+      const centerY = y + Math.floor(gridSize / 2);
+      const i = (centerY * canvas.width + centerX) * 4;
+
+      if (isPixelOn(imageData.data, i)) {
+        const cellX = Math.floor(x / gridSize);
+        const cellY = Math.floor(y / gridSize);
+        cells.add(`${cellX},${cellY}`);
+      }
+    }
+  }
+
+  // Calculate dimensions
+  const { minCellX, maxCellX, minCellY, maxCellY } = findCellBounds(cells);
+  const widthInCells = maxCellX - minCellX + 1;
+  const heightInCells = maxCellY - minCellY + 1;
 
   // If character is too tall, render it scaled down
   if (heightInCells > 11) {
@@ -387,7 +419,7 @@ function getFontMetrics(fontName) {
     return fontMetricsCache.get(fontName);
   }
 
-  // Use renderTestChar to get grid size
+  // Use renderTestChar to get grid size from X
   const metrics = renderTestChar(fontName, "X");
   fontMetricsCache.set(fontName, metrics);
   return metrics;
