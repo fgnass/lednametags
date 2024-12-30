@@ -1,13 +1,19 @@
+// Device constants
+export const VENDOR_ID = 0x0416;
+export const PRODUCT_ID = 0x5020;
+export const PACKET_SIZE = 64;
+
+// Display modes
 export const DisplayMode = {
-  STATIC: 0,
-  SCROLL_LEFT: 1,
-  SCROLL_RIGHT: 2,
-  SCROLL_UP: 3,
-  SCROLL_DOWN: 4,
+  SCROLL_LEFT: 0,
+  SCROLL_RIGHT: 1,
+  SCROLL_UP: 2,
+  SCROLL_DOWN: 3,
+  STATIC: 4,
   ANIMATION: 5,
   SNOW: 6,
-  LASER: 7,
-  CURTAIN: 8,
+  CURTAIN: 7,
+  LASER: 8,
 };
 
 // Screen dimensions

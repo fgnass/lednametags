@@ -1,36 +1,87 @@
-import { DisplayMode } from "./constants";
+import { DisplayMode, PACKET_SIZE } from "./constants";
 
 // Convert pixel data to device format (column-wise bytes)
 export function framesToDeviceFormat(bank) {
-  // For animation mode, we need complete frames
-  const width =
-    bank.mode === DisplayMode.ANIMATION
-      ? Math.ceil(bank.pixels[0].length / 44) * 44 // Round up to complete frames
-      : bank.pixels[0].length;
+  if (bank.mode === DisplayMode.ANIMATION) {
+    // Animation mode: Split into 44-pixel wide frames
+    const frameWidth = 44;
+    const numFrames = Math.ceil(bank.pixels[0].length / frameWidth);
+    const bytesPerFrame = 6 * 11; // 6 bytes × 11 rows
+    const totalBytes = numFrames * bytesPerFrame;
+    const data = new Uint8Array(totalBytes).fill(0);
 
-  const columns = Math.ceil(width / 8);
-  const result = new Uint8Array(columns * 11); // Each column needs 11 bytes
+    // Process each frame
+    for (let frame = 0; frame < numFrames; frame++) {
+      const frameStart = frame * frameWidth;
+      const frameByteStart = frame * bytesPerFrame;
 
-  // Process each column (of 8 pixels width)
-  for (let col = 0; col < columns; col++) {
-    const colOffset = col * 11;
-    const pixelX = col * 8;
-
-    // Fill 11 bytes for this column
-    for (let y = 0; y < 11; y++) {
-      let byte = 0;
-      // Pack 8 horizontal pixels into one byte
-      for (let bit = 0; bit < 8; bit++) {
-        const x = pixelX + bit;
-        if (x < bank.pixels[0].length && bank.pixels[y][x]) {
-          byte |= 1 << (7 - bit);
+      // Process each column in this frame
+      for (let col = 0; col < 6; col++) {
+        // Process each row in this column
+        for (let y = 0; y < 11; y++) {
+          let byte = 0;
+          // Pack 8 horizontal pixels into one byte
+          for (let bit = 0; bit < 8; bit++) {
+            const x = frameStart + col * 8 + bit;
+            if (x < bank.pixels[0].length && bank.pixels[y][x]) {
+              byte |= 1 << (7 - bit);
+            }
+          }
+          // Store byte in column-major format
+          data[frameByteStart + col * 11 + y] = byte;
         }
       }
-      result[colOffset + y] = byte;
     }
+    return data;
+  } else {
+    // Other modes: Pack pixels into columns
+    // Calculate number of byte-columns needed (8 pixels per byte)
+    const numCols = Math.ceil(bank.pixels[0].length / 8);
+    const data = new Uint8Array(numCols * 11).fill(0);
+
+    // Process each byte-column
+    for (let col = 0; col < numCols; col++) {
+      // Process each row in this column
+      for (let y = 0; y < 11; y++) {
+        let byte = 0;
+        // Pack 8 horizontal pixels into one byte
+        for (let bit = 0; bit < 8; bit++) {
+          const x = col * 8 + bit;
+          if (x < bank.pixels[0].length && bank.pixels[y][x]) {
+            byte |= 1 << (7 - bit);
+          }
+        }
+        // Store byte in column-major format (11 bytes per column)
+        data[col * 11 + y] = byte;
+      }
+    }
+    return data;
+  }
+}
+
+// Create test animation pattern
+export function createTestPattern(alternate = false) {
+  const data = new Uint8Array(24); // 6 bytes/frame × 4 frames
+
+  if (alternate) {
+    // Create an alternate pattern (e.g., moving from bottom to top)
+    data.set([
+      0b00000001, 0b00000001, 0b00000001, 0b00000001, 0b00000001, 0b00000001,
+      0b00000010, 0b00000010, 0b00000010, 0b00000010, 0b00000010, 0b00000010,
+      0b00000100, 0b00000100, 0b00000100, 0b00000100, 0b00000100, 0b00000100,
+      0b00001000, 0b00001000, 0b00001000, 0b00001000, 0b00001000, 0b00001000,
+    ]);
+  } else {
+    // Original pattern (moving from left to right)
+    data.set([
+      0b00000001, 0b00000010, 0b00000100, 0b00001000, 0b00010000, 0b00100000,
+      0b00000001, 0b00000010, 0b00000100, 0b00001000, 0b00010000, 0b00100000,
+      0b00000001, 0b00000010, 0b00000100, 0b00001000, 0b00010000, 0b00100000,
+      0b00000001, 0b00000010, 0b00000100, 0b00001000, 0b00010000, 0b00100000,
+    ]);
   }
 
-  return result;
+  return data;
 }
 
 // Create header for device protocol
@@ -38,40 +89,62 @@ export function createHeader({
   modes = [DisplayMode.SCROLL_LEFT],
   speeds = [4],
   brightness = 100,
-  blink = false,
-  ants = false,
-  messageLengths = [5],
+  blinks = [false],
+  ants = [false],
+  lengths = [5],
 } = {}) {
-  const header = new Uint8Array(32); // Header is actually 32 bytes, not 64
+  // Create header with template
+  const header = new Uint8Array(PACKET_SIZE).fill(0);
 
-  // Magic bytes
-  header[0] = 0x77;
-  header[1] = 0x61;
-  header[2] = 0x6e;
-  header[3] = 0x67;
+  // Magic "wang"
+  header.set([0x77, 0x61, 0x6e, 0x67]);
 
-  // Brightness (0-100)
-  header[4] = Math.max(0, Math.min(100, brightness));
+  // Set brightness (byte 5)
+  if (brightness <= 25) header[5] = 0x40;
+  else if (brightness <= 50) header[5] = 0x20;
+  else if (brightness <= 75) header[5] = 0x10;
+  // else default 100% == 0x00
 
-  // Modes for each bank
+  // Helper to ensure 8 values, repeating last value if needed
+  const normalizeArray = (arr, defaultValue) => {
+    const result = [...arr];
+    while (result.length < 8) {
+      result.push(result[result.length - 1] ?? defaultValue);
+    }
+    return result;
+  };
+
+  // Normalize all arrays to 8 elements
+  const normalizedBlinks = normalizeArray(blinks, false);
+  const normalizedAnts = normalizeArray(ants, false);
+  const normalizedSpeeds = normalizeArray(speeds, 4).map((s) =>
+    Math.min(Math.max(s - 1, 0), 7)
+  );
+  const normalizedModes = normalizeArray(modes, DisplayMode.SCROLL_LEFT);
+  const normalizedLengths = normalizeArray(lengths, 0);
+
+  // Pack blinks and ants into bytes 6 and 7
+  header[6] = 0; // Clear blink byte first
+  header[7] = 0; // Clear ants byte first
+  normalizedBlinks.forEach((blink, i) => {
+    header[6] |= (blink ? 1 : 0) << i;
+  });
+  normalizedAnts.forEach((ant, i) => {
+    header[7] |= (ant ? 1 : 0) << i;
+  });
+
+  // Pack speeds and modes into bytes 8-15
   for (let i = 0; i < 8; i++) {
-    header[5 + i] = modes[i] || modes[0];
+    header[8 + i] = (normalizedSpeeds[i] << 4) | normalizedModes[i];
   }
 
-  // Speeds for each bank (1-8)
-  for (let i = 0; i < 8; i++) {
-    const speed = speeds[i] || speeds[0];
-    header[13 + i] = Math.max(1, Math.min(8, speed)) - 1;
-  }
+  // Pack message lengths into bytes 16-31 (2 bytes per length)
+  normalizedLengths.forEach((length, i) => {
+    header[16 + i * 2] = Math.floor(length / 256);
+    header[17 + i * 2] = length % 256;
+  });
 
-  // Message lengths for each bank
-  for (let i = 0; i < 8; i++) {
-    header[21 + i] = messageLengths[i] || messageLengths[0];
-  }
-
-  // Effects
-  header[29] = blink ? 1 : 0;
-  header[30] = ants ? 1 : 0;
+  // Date bytes 38-43 are left at 0 since they're not visible on device
 
   return header;
 }

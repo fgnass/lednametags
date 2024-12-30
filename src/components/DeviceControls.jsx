@@ -1,6 +1,6 @@
 import { Usb, Unplug, Send } from "lucide-preact";
 import { isConnected } from "../store";
-import { connectToDevice, toggleConnection, uploadToDevice } from "../device";
+import { toggleConnection, uploadToDevice } from "../device";
 import { Button } from "./Button";
 export default function DeviceControls() {
   return (
