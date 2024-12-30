@@ -378,28 +378,9 @@ export function textToPixels(text, fontName, center = false) {
   // Center the text if requested
   let xOffset = center ? Math.floor((SCREEN_WIDTH - fittingWidth) / 2) : 0;
 
-  console.log("Debug textToPixels:", {
-    text,
-    center,
-    xOffset,
-    screenWidth: SCREEN_WIDTH,
-    resultWidth,
-    fittingChars,
-    fittingWidth,
-    chars: chars.slice(0, fittingChars).map((c, i) => ({
-      index: i,
-      char: text[i],
-      width: c.width,
-      height: c.height,
-      hasPixels: c.pixels.length > 0,
-      wouldEndAt: xOffset + c.width,
-    })),
-  });
-
   for (let i = 0; i < fittingChars; i++) {
     const char = chars[i];
     if (!char.pixels.length) {
-      console.log("Empty char, advancing by:", char.width + 1);
       xOffset += char.width + 1;
       continue;
     }
@@ -410,14 +391,6 @@ export function textToPixels(text, fontName, center = false) {
         : (metrics.heightInCells <= SCREEN_HEIGHT
             ? metrics.heightInCells - char.height
             : 0) + Math.floor((SCREEN_HEIGHT - metrics.heightInCells) / 2);
-
-    console.log("Rendering char at:", {
-      xOffset,
-      yOffset,
-      charWidth: char.width,
-      charHeight: char.height,
-      wouldEndAt: xOffset + char.width,
-    });
 
     for (
       let y = 0;
