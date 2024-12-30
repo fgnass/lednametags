@@ -5,7 +5,7 @@ import { useEffect, useState } from "preact/hooks";
 export default function LEDMatrix() {
   const bank = currentBankData.value;
   const mode = bank.mode;
-  const showScrollButtons = mode !== DisplayMode.ANIMATION && mode !== DisplayMode.STATIC;
+  const showScrollButtons = mode === DisplayMode.SCROLL_LEFT || mode === DisplayMode.SCROLL_RIGHT;
   const canScrollLeft = bank.viewport > 0;
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawMode, setDrawMode] = useState(null); // true = draw, false = erase

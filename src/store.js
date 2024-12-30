@@ -77,14 +77,14 @@ function startPlayback() {
   initialViewport = data.viewport;
 
   // Reset viewport to start position
-  if (
-    data.mode === DisplayMode.SCROLL_RIGHT ||
-    data.mode === DisplayMode.SCROLL_DOWN
-  ) {
-    data.viewport =
-      data.mode === DisplayMode.SCROLL_RIGHT
-        ? data.pixels[0].length - 44
-        : data.pixels.length - 11;
+  if (data.mode === DisplayMode.SCROLL_RIGHT) {
+    // Start with text completely off-screen to the left
+    data.viewport = data.pixels[0].length - SCREEN_WIDTH;
+  } else if (data.mode === DisplayMode.SCROLL_LEFT) {
+    // Start with text completely off-screen to the right
+    data.viewport = 0;
+  } else if (data.mode === DisplayMode.SCROLL_DOWN) {
+    data.viewport = data.pixels.length - 11;
   } else {
     data.viewport = 0;
   }
@@ -118,14 +118,9 @@ function startPlayback() {
   // Cache frequently accessed values
   const bankSignal = banks[currentBank.value];
   const mode = data.mode;
-  const maxViewport =
-    mode === DisplayMode.SCROLL_RIGHT || mode === DisplayMode.SCROLL_DOWN
-      ? 0
-      : data.pixels[0].length - 44;
 
   // Use requestAnimationFrame for smoother animation
   let lastFrameTime = 0;
-  let frameCounter = 0;
 
   const animate = (timestamp) => {
     if (!isPlaying.value) return;
@@ -140,10 +135,22 @@ function startPlayback() {
           newData.currentFrame = (newData.currentFrame + 1) % frameCount.value;
           break;
         case DisplayMode.SCROLL_LEFT:
-          newData.viewport = (newData.viewport + 1) % newData.pixels[0].length;
+          // Stop when text has scrolled off to the left
+          if (newData.viewport < newData.pixels[0].length - SCREEN_WIDTH) {
+            newData.viewport++;
+          } else {
+            stopPlayback();
+            return;
+          }
           break;
         case DisplayMode.SCROLL_RIGHT:
-          newData.viewport = Math.max(0, newData.viewport - 1);
+          // Stop when text has scrolled in from the left
+          if (newData.viewport > 0) {
+            newData.viewport--;
+          } else {
+            stopPlayback();
+            return;
+          }
           break;
         case DisplayMode.SCROLL_UP:
           newData.viewport = Math.min(
