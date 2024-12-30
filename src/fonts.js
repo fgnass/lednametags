@@ -251,6 +251,13 @@ function getCharPixels(char, fontName) {
 
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const bounds = findImageBounds(imageData, canvas.width, canvas.height);
+
+    // Handle characters that produce no visible pixels
+    if (bounds.minX > bounds.maxX || bounds.minY > bounds.maxY) {
+      const width = Math.ceil(metrics.widthInCells * 0.8); // Empty glyph width relative to X width
+      return { pixels: [], width, height: metrics.heightInCells };
+    }
+
     const cells = new Set();
 
     for (let y = bounds.minY; y <= bounds.maxY; y += metrics.gridSize) {
@@ -328,15 +335,21 @@ export function textToPixels(text, fontName, targetHeight = 11) {
 
   currentChar.value = text[text.length - 1];
   const chars = text.split("").map((char) => getCharPixels(char, fontName));
-  const totalWidth = chars.reduce((sum, char) => sum + char.width + 1, 0) - 1;
   const metrics = getFontMetrics(fontName);
+
+  // Calculate total width with 1px gaps between chars
+  const totalWidth = chars.reduce((sum, char) => sum + char.width + 1, 0) - 1;
+
   const result = Array(targetHeight)
     .fill()
     .map(() => Array(totalWidth).fill(false));
 
   let xOffset = 0;
   for (const char of chars) {
-    if (!char.pixels.length) continue;
+    if (!char.pixels.length) {
+      xOffset += char.width + 1;
+      continue;
+    }
 
     const yOffset =
       metrics.heightInCells > 11
