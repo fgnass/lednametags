@@ -1,32 +1,27 @@
-import { isConnected } from '../store'
-import { connectToDevice, toggleConnection } from '../device'
-
+import { Usb, Unplug, Send } from "lucide-preact";
+import { isConnected } from "../store";
+import { connectToDevice, toggleConnection, uploadToDevice } from "../device";
+import { Button } from "./Button";
 export default function DeviceControls() {
   return (
     <div class="flex justify-center gap-4">
       {isConnected.value ? (
         <>
-          <button
-            class="px-6 py-3 bg-orange-500 shadow-lg shadow-orange-500/50 rounded-lg"
-            onClick={toggleConnection}
-          >
+          <Button onClick={toggleConnection}>
+            <Unplug />
             Disconnect
-          </button>
-          <button
-            class="px-6 py-3 bg-gray-800 rounded-lg hover:bg-gray-700"
-            onClick={connectToDevice}
-          >
+          </Button>
+          <Button onClick={uploadToDevice}>
+            <Send />
             Upload to Device
-          </button>
+          </Button>
         </>
       ) : (
-        <button
-          class="px-6 py-3 bg-gray-800 rounded-lg hover:bg-gray-700"
-          onClick={toggleConnection}
-        >
+        <Button onClick={toggleConnection}>
+          <Usb />
           Connect
-        </button>
+        </Button>
       )}
     </div>
-  )
-} 
+  );
+}

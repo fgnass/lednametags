@@ -13,7 +13,7 @@ export default function AnimationControls() {
           class="px-6 py-3 bg-gray-800 rounded-lg hover:bg-gray-700 flex items-center gap-2"
           onClick={prevFrame}
         >
-          <ChevronLeft class="w-5 h-5" />
+          <ChevronLeft />
           Prev
         </button>
 
@@ -26,7 +26,7 @@ export default function AnimationControls() {
           onClick={nextFrame}
         >
           Next
-          <ChevronRight class="w-5 h-5" />
+          <ChevronRight />
         </button>
       </div>
 
@@ -35,7 +35,7 @@ export default function AnimationControls() {
           class="px-6 py-3 bg-gray-800 rounded-lg hover:bg-gray-700 flex items-center gap-2"
           onClick={addFrame}
         >
-          <Plus class="w-5 h-5" />
+          <Plus />
           Add Frame
         </button>
 
@@ -44,7 +44,7 @@ export default function AnimationControls() {
           onClick={deleteFrame}
           disabled={frames <= 1}
         >
-          <Trash2 class="w-5 h-5" />
+          <Trash2 />
           Delete Frame
         </button>
       </div>

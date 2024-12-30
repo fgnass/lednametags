@@ -1,6 +1,7 @@
 {
   "name": "lednametags",
   "version": "1.0.0",
+  "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,8 +10,8 @@
   },
   "dependencies": {
     "@preact/signals": "^1.2.2",
+    "classname-variants": "^1.5.0",
     "lucide-preact": "^0.469.0",
-    "msdf-bmfont-xml": "^2.7.0",
     "preact": "^10.19.3"
   },
   "devDependencies": {

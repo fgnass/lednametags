@@ -1,13 +1,13 @@
 import { memoryUsage, memoryPercent } from "../store";
-import { Database } from "lucide-preact";
+import { Microchip } from "lucide-preact";
 
 export default function MemoryStats() {
   return (
-    <div class="flex items-center gap-2 text-gray-400 text-sm">
-      <Database class="w-4 h-4" />
+    <div class="flex items-center gap-1 text-gray-400 text-sm">
+      <Microchip class="w-4 h-4" />
       <div class="tabular-nums">
-        {memoryUsage} bytes ({memoryPercent}%)
+        {memoryUsage.value} bytes ({100 - memoryPercent.value}% free)
       </div>
     </div>
   );
-} 
+}

@@ -1,11 +1,20 @@
-import { currentFrame, togglePixel, currentBankData, scrollImage } from "../store";
+import {
+  currentFrame,
+  togglePixel,
+  currentBankData,
+  scrollImage,
+} from "../store";
 import { DisplayMode } from "../constants";
 import { useEffect, useState } from "preact/hooks";
+import { ChevronLeft, ChevronRight } from "lucide-preact";
+import { Button } from "./Button";
+import { styled } from "classname-variants/preact";
 
 export default function LEDMatrix() {
   const bank = currentBankData.value;
   const mode = bank.mode;
-  const showScrollButtons = mode === DisplayMode.SCROLL_LEFT || mode === DisplayMode.SCROLL_RIGHT;
+  const showScrollButtons =
+    mode === DisplayMode.SCROLL_LEFT || mode === DisplayMode.SCROLL_RIGHT;
   const canScrollLeft = bank.viewport > 0;
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawMode, setDrawMode] = useState(null); // true = draw, false = erase
@@ -16,8 +25,8 @@ export default function LEDMatrix() {
       setIsDrawing(false);
       setDrawMode(null);
     };
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => window.removeEventListener('mouseup', handleMouseUp);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => window.removeEventListener("mouseup", handleMouseUp);
   }, []);
 
   const handleMouseDown = (x, y, isActive) => {
@@ -33,18 +42,16 @@ export default function LEDMatrix() {
   };
 
   return (
-    <div class="flex items-center justify-center gap-2">
-      <button
+    <div class="flex justify-center gap-2 my-16">
+      <ScrollButton
         onClick={() => scrollImage("left")}
         disabled={!canScrollLeft}
-        class={`h-[286px] w-10 bg-gray-800 rounded-lg hover:bg-gray-700 flex items-center justify-center disabled:opacity-30 disabled:hover:bg-gray-800 ${!showScrollButtons && 'invisible'}`}
+        invisible={!showScrollButtons}
       >
-        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-        </svg>
-      </button>
+        <ChevronLeft />
+      </ScrollButton>
 
-      <div class="grid gap-0.5 bg-gray-900 p-4 rounded-lg">
+      <div class="grid gap-0.5 bg-gray-900 px-4 rounded-lg">
         {currentFrame.value.map((row, y) => (
           <div key={y} class="flex gap-0.5">
             {row.map((isActive, x) => (
@@ -63,14 +70,21 @@ export default function LEDMatrix() {
         ))}
       </div>
 
-      <button
+      <ScrollButton
         onClick={() => scrollImage("right")}
-        class={`h-[286px] w-10 bg-gray-800 rounded-lg hover:bg-gray-700 flex items-center justify-center ${!showScrollButtons && 'invisible'}`}
+        invisible={!showScrollButtons}
       >
-        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-        </svg>
-      </button>
+        <ChevronRight />
+      </ScrollButton>
     </div>
   );
-} 
+}
+
+const ScrollButton = styled(Button, {
+  base: "px-2",
+  variants: {
+    invisible: {
+      true: "invisible",
+    },
+  },
+});

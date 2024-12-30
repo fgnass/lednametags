@@ -1,12 +1,12 @@
 import { ChevronDown } from "lucide-preact";
 
-export default function Select({ value, onChange, children, className = "" }) {
+export default function Select({ value, onChange, children }) {
   return (
-    <div class="relative">
+    <div class="relative flex">
       <select
         value={value}
         onChange={onChange}
-        class={`appearance-none pr-12 ${className} bg-gray-800 rounded-lg hover:bg-gray-700`}
+        class={`appearance-none px-6 py-3 pr-12 bg-gray-800 rounded-lg hover:bg-gray-600`}
       >
         {children}
       </select>
@@ -15,4 +15,4 @@ export default function Select({ value, onChange, children, className = "" }) {
       </div>
     </div>
   );
-} 
+}
