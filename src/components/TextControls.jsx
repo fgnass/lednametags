@@ -1,14 +1,15 @@
-import { currentBankData, setText } from "../store";
-import { fonts, currentFont, setFont } from "../fonts";
+import { currentBankData, setText, setFont } from "../store";
+import { fonts } from "../fonts";
 import Select from "./Select";
 
 export default function TextControls() {
   const bank = currentBankData.value;
+  const currentFont = bank.font || fonts.value[0];
 
   return (
     <div class="flex gap-4">
       <Select
-        value={currentFont.value}
+        value={currentFont}
         onChange={(e) => {
           setFont(e.target.value);
           setText(bank.text); // Re-render text with new font

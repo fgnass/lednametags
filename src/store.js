@@ -29,6 +29,7 @@ function createBank() {
     speed: 7, // Default speed (7 = 7.5 fps)
     blink: false,
     ants: false,
+    font: null, // Default to no font selected
   };
 }
 
@@ -148,11 +149,8 @@ export function setText(text) {
   const oldViewport = data.viewport;
 
   data.text = text;
-  data.pixels = textToPixels(
-    text,
-    currentFont.value,
-    shouldCenterText(data.mode)
-  );
+  const font = data.font || fonts.value[0];
+  data.pixels = textToPixels(text, font, shouldCenterText(data.mode));
 
   // If pixels array is empty or undefined, create a default one
   if (!data.pixels || !data.pixels.length) {
@@ -196,11 +194,8 @@ export function setMode(mode) {
 
   // Re-render text with appropriate centering if there is text
   if (data.text) {
-    data.pixels = textToPixels(
-      data.text,
-      currentFont.value,
-      shouldCenterText(mode)
-    );
+    const font = data.font || fonts.value[0];
+    data.pixels = textToPixels(data.text, font, shouldCenterText(mode));
   }
 
   bank.value = data;
@@ -373,4 +368,11 @@ export function setBlink(value) {
 export function setAnts(value) {
   const bank = banks[currentBank.value];
   bank.value = { ...bank.value, ants: value };
+}
+
+export function setFont(fontName) {
+  const bank = banks[currentBank.value];
+  const data = { ...bank.value, font: fontName };
+  bank.value = data;
+  setText(data.text); // Re-render text with new font
 }
