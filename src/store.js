@@ -19,6 +19,8 @@ function createBank() {
     currentFrame: 0,
     viewport: 0,
     speed: 7, // Default speed (7 = 7.5 fps)
+    blink: false,
+    ants: false,
   };
 }
 
@@ -26,6 +28,8 @@ function createBank() {
 export const currentBank = signal(0);
 export const isConnected = signal(false);
 export const isPlaying = signal(false);
+export const isCycling = signal(false);
+export const previewState = signal(null);
 
 // Load state from local storage or create initial state
 const savedState = JSON.parse(
@@ -57,7 +61,6 @@ banks.forEach((bank) => bank.subscribe(saveState));
 
 // Animation playback
 let playbackTimer = null;
-let initialViewport = 0; // Store initial viewport position
 
 export function togglePlayback() {
   if (isPlaying.value) {
@@ -71,100 +74,146 @@ function startPlayback() {
   if (playbackTimer) return;
   isPlaying.value = true;
 
-  // Store initial viewport position
+  // Store initial bank for cycling
+  const initialBank = currentBank.value;
   const bank = banks[currentBank.value];
-  const data = { ...bank.value };
-  initialViewport = data.viewport;
+  const bankData = bank.value;
 
-  // Reset viewport to start position
-  if (data.mode === DisplayMode.SCROLL_RIGHT) {
-    // Start with text completely off-screen to the left
-    data.viewport = data.pixels[0].length - SCREEN_WIDTH;
-  } else if (data.mode === DisplayMode.SCROLL_LEFT) {
-    // Start with text completely off-screen to the right
-    data.viewport = 0;
-  } else if (data.mode === DisplayMode.SCROLL_DOWN) {
-    data.viewport = data.pixels.length - 11;
-  } else {
-    data.viewport = 0;
-  }
+  // Create preview state
+  const preview = {
+    pixels: [...bankData.pixels.map((row) => [...row])],
+    viewport: 0,
+    currentFrame: bankData.currentFrame,
+    mode: bankData.mode,
+  };
 
-  // For vertical scrolling, we need a larger pixel array
-  if (
-    data.mode === DisplayMode.SCROLL_UP ||
-    data.mode === DisplayMode.SCROLL_DOWN
+  // Prepare preview state based on mode
+  if (bankData.mode === DisplayMode.SCROLL_RIGHT) {
+    preview.viewport = preview.pixels[0].length + 1;
+  } else if (bankData.mode === DisplayMode.SCROLL_LEFT) {
+    preview.viewport = -(SCREEN_WIDTH + 1);
+  } else if (
+    bankData.mode === DisplayMode.SCROLL_UP ||
+    bankData.mode === DisplayMode.SCROLL_DOWN
   ) {
-    // Create a double-height array for smooth scrolling
-    const blankRows = Array(11)
+    // Create a triple-height array for smooth scrolling
+    const blankRows = Array(SCREEN_HEIGHT)
       .fill()
-      .map(() => Array(data.pixels[0].length).fill(false));
-
-    // For scroll up, add blank rows at the top
-    if (data.mode === DisplayMode.SCROLL_UP) {
-      data.pixels = [...blankRows, ...data.pixels];
-      data.viewport = 0; // Start at the blank rows
-    } else {
-      // For scroll down, add blank rows at the bottom
-      data.pixels = [...data.pixels, ...blankRows];
-      data.viewport = data.pixels.length - 11; // Start at the content
-    }
+      .map(() => Array(preview.pixels[0].length).fill(false));
+    preview.pixels = [...blankRows, ...preview.pixels, ...blankRows];
+    preview.viewport =
+      bankData.mode === DisplayMode.SCROLL_DOWN
+        ? preview.pixels.length - SCREEN_HEIGHT
+        : -1;
   }
 
-  banks[currentBank.value].value = data;
+  previewState.value = preview;
 
-  const fps = SPEED_FPS[data.speed - 1];
+  const fps = SPEED_FPS[bankData.speed - 1];
   const interval = Math.round(1000 / fps);
+  const mode = bankData.mode;
 
-  // Cache frequently accessed values
-  const bankSignal = banks[currentBank.value];
-  const mode = data.mode;
-
-  // Use requestAnimationFrame for smoother animation
   let lastFrameTime = 0;
+  let pauseUntil = 0;
 
   const animate = (timestamp) => {
     if (!isPlaying.value) return;
 
+    if (timestamp < pauseUntil) {
+      playbackTimer = requestAnimationFrame(animate);
+      return;
+    }
+
     const elapsed = timestamp - lastFrameTime;
     if (elapsed >= interval) {
-      const currentData = bankSignal.value;
-      const newData = { ...currentData };
+      const preview = { ...previewState.value };
+      let shouldStop = false;
 
       switch (mode) {
         case DisplayMode.ANIMATION:
-          newData.currentFrame = (newData.currentFrame + 1) % frameCount.value;
+          preview.currentFrame = (preview.currentFrame + 1) % frameCount.value;
           break;
+
         case DisplayMode.SCROLL_LEFT:
-          // Stop when text has scrolled off to the left
-          if (newData.viewport < newData.pixels[0].length - SCREEN_WIDTH) {
-            newData.viewport++;
+          if (preview.viewport < preview.pixels[0].length) {
+            preview.viewport++;
           } else {
-            stopPlayback();
-            return;
+            pauseUntil = timestamp + 1000;
+            preview.viewport = -(SCREEN_WIDTH + 1);
           }
           break;
+
         case DisplayMode.SCROLL_RIGHT:
-          // Stop when text has scrolled in from the left
-          if (newData.viewport > 0) {
-            newData.viewport--;
+          if (preview.viewport > -SCREEN_WIDTH) {
+            preview.viewport--;
           } else {
-            stopPlayback();
-            return;
+            pauseUntil = timestamp + 1000;
+            preview.viewport = preview.pixels[0].length + 1;
           }
           break;
+
         case DisplayMode.SCROLL_UP:
-          newData.viewport = Math.min(
-            newData.viewport + 1,
-            newData.pixels.length - 11
-          );
+        case DisplayMode.SCROLL_DOWN: {
+          const currentPos = preview.viewport;
+          const totalHeight = preview.pixels.length;
+          const isScrollUp = mode === DisplayMode.SCROLL_UP;
+
+          if (isScrollUp) {
+            if (currentPos === SCREEN_HEIGHT - 1) {
+              pauseUntil = timestamp + 1000;
+            }
+            if (currentPos < totalHeight - SCREEN_HEIGHT) {
+              preview.viewport++;
+            } else {
+              shouldStop = true;
+            }
+          } else {
+            if (currentPos === SCREEN_HEIGHT + 1) {
+              pauseUntil = timestamp + 1000;
+            }
+            if (currentPos > 0) {
+              preview.viewport--;
+            } else {
+              shouldStop = true;
+            }
+          }
           break;
-        case DisplayMode.SCROLL_DOWN:
-          newData.viewport = Math.max(0, newData.viewport - 1);
-          break;
+        }
       }
 
-      bankSignal.value = newData;
+      previewState.value = preview;
       lastFrameTime = timestamp;
+
+      if (shouldStop) {
+        if (isCycling.value) {
+          // Find next bank with data
+          let nextBank = (currentBank.value + 1) % 8;
+          while (nextBank !== initialBank && !bankHasData.value[nextBank]) {
+            nextBank = (nextBank + 1) % 8;
+          }
+
+          if (nextBank !== initialBank && bankHasData.value[nextBank]) {
+            currentBank.value = nextBank;
+            startPlayback();
+            return;
+          }
+        } else if (
+          mode === DisplayMode.SCROLL_UP ||
+          mode === DisplayMode.SCROLL_DOWN
+        ) {
+          // Restart vertical scroll after pause
+          pauseUntil = timestamp + 1000;
+          preview.viewport =
+            mode === DisplayMode.SCROLL_DOWN
+              ? preview.pixels.length - SCREEN_HEIGHT
+              : -1;
+          previewState.value = preview;
+          shouldStop = false;
+        } else {
+          stopPlayback();
+          return;
+        }
+      }
     }
 
     playbackTimer = requestAnimationFrame(animate);
@@ -179,26 +228,7 @@ function stopPlayback() {
     playbackTimer = null;
   }
   isPlaying.value = false;
-
-  // Reset pixel array size after vertical scrolling and restore viewport
-  const bank = banks[currentBank.value];
-  const data = { ...bank.value };
-  if (
-    data.mode === DisplayMode.SCROLL_UP ||
-    data.mode === DisplayMode.SCROLL_DOWN
-  ) {
-    // For scroll up, remove the blank rows from the top
-    if (data.mode === DisplayMode.SCROLL_UP) {
-      data.pixels = data.pixels.slice(11);
-    } else {
-      // For scroll down, remove the blank rows from the bottom
-      data.pixels = data.pixels.slice(0, -11);
-    }
-  }
-
-  // Restore initial viewport position
-  data.viewport = initialViewport;
-  banks[currentBank.value].value = data;
+  previewState.value = null;
 }
 
 // Computed values
@@ -219,27 +249,38 @@ export const bankMemory = computed(() =>
 );
 
 export const currentFrame = computed(() => {
-  const bank = currentBankData.value;
+  // Use preview state if available
+  const state = previewState.value || currentBankData.value;
 
   if (
-    bank.mode === DisplayMode.SCROLL_UP ||
-    bank.mode === DisplayMode.SCROLL_DOWN
+    state.mode === DisplayMode.SCROLL_UP ||
+    state.mode === DisplayMode.SCROLL_DOWN
   ) {
     // For vertical scrolling, take a slice of rows
-    return bank.pixels
-      .slice(bank.viewport, bank.viewport + 11)
+    // Handle negative viewport by showing blank rows
+    const viewport = Math.max(0, state.viewport);
+    return state.pixels
+      .slice(viewport, viewport + 11)
       .map((row) => row.slice(0, 44));
   }
 
   // For horizontal modes
   const start =
-    bank.mode === DisplayMode.ANIMATION
-      ? bank.currentFrame * 44
-      : bank.viewport;
+    state.mode === DisplayMode.ANIMATION
+      ? state.currentFrame * 44
+      : state.viewport;
   const end = start + 44;
-  return bank.pixels.map((row) => {
+  return state.pixels.map((row) => {
+    if (start < 0) {
+      // Handle negative viewport by showing blank columns
+      const visible = row.slice(0, Math.max(0, end));
+      return [...Array(Math.min(44, -start)).fill(false), ...visible];
+    }
+    if (start >= row.length) {
+      return Array(44).fill(false);
+    }
     if (end > row.length) {
-      return [...row, ...Array(end - row.length).fill(false)].slice(start, end);
+      return [...row.slice(start), ...Array(end - row.length).fill(false)];
     }
     return row.slice(start, end);
   });
@@ -258,6 +299,7 @@ function shouldCenterText(mode) {
 
 // Actions
 export function togglePixel(x, y) {
+  if (isPlaying.value) return;
   const bank = banks[currentBank.value];
   const data = { ...bank.value };
 
@@ -272,9 +314,10 @@ export function togglePixel(x, y) {
 }
 
 export function setText(text) {
+  if (isPlaying.value) return;
   const bank = banks[currentBank.value];
   const data = { ...bank.value };
-  const oldWidth = data.pixels[0].length;
+  const oldWidth = data.pixels?.[0]?.length ?? 0;
   const oldViewport = data.viewport;
 
   data.text = text;
@@ -283,6 +326,13 @@ export function setText(text) {
     currentFont.value,
     shouldCenterText(data.mode)
   );
+
+  // If pixels array is empty or undefined, create a default one
+  if (!data.pixels || !data.pixels.length) {
+    data.pixels = Array(SCREEN_HEIGHT)
+      .fill()
+      .map(() => Array(SCREEN_WIDTH).fill(false));
+  }
 
   // Handle scrolling behavior for horizontal modes
   if (
@@ -327,9 +377,16 @@ export function setMode(mode) {
   }
 
   bank.value = data;
+
+  // Restart playback if running
+  if (isPlaying.value) {
+    stopPlayback();
+    startPlayback();
+  }
 }
 
 export function clearImage() {
+  if (isPlaying.value) return;
   const bank = banks[currentBank.value];
   const data = { ...bank.value, text: "" }; // Clear text as well
 
@@ -355,6 +412,7 @@ export function clearImage() {
 }
 
 export function invertImage() {
+  if (isPlaying.value) return;
   const bank = banks[currentBank.value];
   const data = { ...bank.value };
 
@@ -377,6 +435,7 @@ export function invertImage() {
 }
 
 export function nextFrame() {
+  if (isPlaying.value) return;
   const bank = banks[currentBank.value];
   const data = { ...bank.value };
   data.currentFrame = (data.currentFrame + 1) % frameCount.value;
@@ -384,6 +443,7 @@ export function nextFrame() {
 }
 
 export function prevFrame() {
+  if (isPlaying.value) return;
   const bank = banks[currentBank.value];
   const data = { ...bank.value };
   data.currentFrame =
@@ -392,6 +452,7 @@ export function prevFrame() {
 }
 
 export function scrollImage(direction) {
+  if (isPlaying.value) return;
   const bank = banks[currentBank.value];
   const data = { ...bank.value };
 
@@ -407,6 +468,7 @@ export function scrollImage(direction) {
 }
 
 export function addFrame() {
+  if (isPlaying.value) return;
   const bank = banks[currentBank.value];
   const data = { ...bank.value };
 
@@ -439,6 +501,7 @@ export function setSpeed(speed) {
 }
 
 export function deleteFrame() {
+  if (isPlaying.value) return;
   const bank = banks[currentBank.value];
   const data = { ...bank.value };
 
@@ -474,3 +537,13 @@ export const memoryUsage = computed(() => {
 export const memoryPercent = computed(() => {
   return Math.round((memoryUsage.value / DEVICE_MEMORY) * 100);
 });
+
+export function setBlink(value) {
+  const bank = banks[currentBank.value];
+  bank.value = { ...bank.value, blink: value };
+}
+
+export function setAnts(value) {
+  const bank = banks[currentBank.value];
+  bank.value = { ...bank.value, ants: value };
+}

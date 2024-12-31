@@ -11,7 +11,7 @@ export default function BankSelector() {
         .fill()
         .map((_, i) => (
           <option key={i} value={i} class="flex items-center gap-2">
-            {bankHasData.value[i] ? "●" : "○"} Bank {i + 1}
+            {bankHasData.value[i] ? "●" : "○"} Bank M{i + 1}
           </option>
         ))}
     </Select>
