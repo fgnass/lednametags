@@ -223,9 +223,9 @@ export function clearImage() {
       return newRow;
     });
   } else {
-    data.pixels = Array(11)
+    data.pixels = Array(SCREEN_HEIGHT)
       .fill()
-      .map(() => Array(88).fill(false));
+      .map(() => Array(SCREEN_WIDTH * 2).fill(false));
     data.viewport = 0; // Reset viewport to 0
   }
 
@@ -239,8 +239,8 @@ export function invertImage() {
 
   if (data.mode === DisplayMode.ANIMATION) {
     // Invert just the current frame
-    const start = data.currentFrame * 44;
-    const end = start + 44;
+    const start = data.currentFrame * SCREEN_WIDTH;
+    const end = start + SCREEN_WIDTH;
     data.pixels = data.pixels.map((row) => {
       const newRow = [...row];
       for (let x = start; x < end; x++) {
@@ -294,8 +294,8 @@ export function addFrame() {
   const data = { ...bank.value };
 
   // Clone the current frame's pixels
-  const start = data.currentFrame * 44;
-  const end = start + 44;
+  const start = data.currentFrame * SCREEN_WIDTH;
+  const end = start + SCREEN_WIDTH;
   const newPixels = data.pixels.map((row) => {
     const newRow = [...row];
     // Insert a copy of the current frame after itself
@@ -329,13 +329,13 @@ export function deleteFrame() {
   // Don't delete if it's the last frame
   if (frameCount.value <= 1) return;
 
-  const start = data.currentFrame * 44;
-  const end = start + 44;
+  const start = data.currentFrame * SCREEN_WIDTH;
+  const end = start + SCREEN_WIDTH;
 
   // Remove the current frame's pixels
   data.pixels = data.pixels.map((row) => {
     const newRow = [...row];
-    newRow.splice(start, 44);
+    newRow.splice(start, SCREEN_WIDTH);
     return newRow;
   });
 
@@ -374,4 +374,72 @@ export function setFont(fontName) {
   const data = { ...bank.value, font: fontName };
   bank.value = data;
   setText(data.text); // Re-render text with new font
+}
+
+export function translateImage(direction) {
+  if (isPlaying.value) return;
+  const bank = banks[currentBank.value];
+  const data = { ...bank.value };
+
+  // Check if we have any pixels to translate
+  if (!data.pixels?.length || !data.pixels[0]?.length) return;
+
+  if (data.mode === DisplayMode.ANIMATION) {
+    // For animation mode, only translate current frame
+    const start = data.currentFrame * SCREEN_WIDTH;
+    const end = start + SCREEN_WIDTH;
+    const framePixels = data.pixels.map((row) => row.slice(start, end));
+
+    // Translate frame pixels
+    const translatedFrame = translatePixels(framePixels, direction);
+
+    // Put translated frame back
+    data.pixels = data.pixels.map((row, y) => {
+      const newRow = [...row];
+      for (let x = 0; x < SCREEN_WIDTH; x++) {
+        newRow[start + x] = translatedFrame[y][x];
+      }
+      return newRow;
+    });
+  } else {
+    // For other modes, translate all pixels
+    data.pixels = translatePixels(data.pixels, direction);
+  }
+
+  bank.value = data;
+}
+
+// Helper function to translate a pixel array in a given direction
+function translatePixels(pixels, direction) {
+  const height = pixels.length;
+  const width = pixels[0].length;
+  const result = Array(height)
+    .fill()
+    .map(() => Array(width).fill(false));
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let newX = x;
+      let newY = y;
+
+      switch (direction) {
+        case "left":
+          newX = (x + width - 1) % width;
+          break;
+        case "right":
+          newX = (x + 1) % width;
+          break;
+        case "up":
+          newY = (y + height - 1) % height;
+          break;
+        case "down":
+          newY = (y + 1) % height;
+          break;
+      }
+
+      result[newY][newX] = pixels[y][x];
+    }
+  }
+
+  return result;
 }

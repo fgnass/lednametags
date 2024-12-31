@@ -6,6 +6,7 @@ import {
   setSpeed,
   setBlink,
   setAnts,
+  translateImage,
 } from "../store";
 import { DisplayMode, SPEED_LABELS } from "../constants";
 import {
@@ -33,10 +34,6 @@ const ToolGroup = ({ title, children }) => (
   </div>
 );
 
-const MoveButton = ({ children }) => (
-  <Button class="p-0 flex items-center justify-center">{children}</Button>
-);
-
 export default function EditPanel() {
   const bank = currentBankData.value;
 
@@ -56,20 +53,20 @@ export default function EditPanel() {
 
         <ToolGroup title="Move">
           <div class="flex items-center gap-1 w-min">
-            <MoveButton>
+            <Button snug onClick={() => translateImage("left")}>
               <ChevronLeft class="w-4 h-4" />
-            </MoveButton>
+            </Button>
             <div class="flex flex-col gap-1">
-              <MoveButton>
+              <Button snug onClick={() => translateImage("up")}>
                 <ChevronUp class="w-4 h-4" />
-              </MoveButton>
-              <MoveButton>
+              </Button>
+              <Button snug onClick={() => translateImage("down")}>
                 <ChevronDown class="w-4 h-4" />
-              </MoveButton>
+              </Button>
             </div>
-            <MoveButton>
+            <Button snug onClick={() => translateImage("right")}>
               <ChevronRight class="w-4 h-4" />
-            </MoveButton>
+            </Button>
           </div>
         </ToolGroup>
       </div>
