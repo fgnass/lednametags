@@ -44,7 +44,7 @@ const savedState = JSON.parse(
 // Create a signal for each bank
 export const banks = Array(8)
   .fill()
-  .map((_, i) => signal(savedState?.banks[i] || createBank()));
+  .map((_, i) => signal(savedState?.banks?.[i] || createBank()));
 
 // Restore current bank
 if (savedState?.currentBank != null) {
