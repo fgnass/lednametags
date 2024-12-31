@@ -291,9 +291,13 @@ function updateAnimation(preview, mode, timestamp) {
         );
         if (timeInPhase >= 2000) {
           // 2000ms for closing
-          preview.curtainPhase = "opening";
-          preview.curtainPos = 0;
-          preview.lastPhaseChange = timestamp;
+          if (isCycling.value) {
+            shouldStop = true;
+          } else {
+            preview.curtainPhase = "opening";
+            preview.curtainPos = 0;
+            preview.lastPhaseChange = timestamp;
+          }
         }
       }
       break;
