@@ -13,7 +13,6 @@ import {
   startPlayback,
   isPlaying,
   previewState,
-  isCycling,
 } from "./animation";
 
 // Bank data structure

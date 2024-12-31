@@ -9,8 +9,21 @@ import {
 
 // Animation state
 export const isPlaying = signal(false);
-export const isCycling = signal(false);
 export const previewState = signal(null);
+
+// Load cycling state from local storage
+const savedState = JSON.parse(
+  localStorage.getItem("lednametags-state") || "null"
+);
+export const isCycling = signal(savedState?.isCycling || false);
+
+// Save cycling state when it changes
+isCycling.subscribe((value) => {
+  const state =
+    JSON.parse(localStorage.getItem("lednametags-state") || "null") || {};
+  state.isCycling = value;
+  localStorage.setItem("lednametags-state", JSON.stringify(state));
+});
 
 let playbackTimer = null;
 
