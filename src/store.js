@@ -13,6 +13,8 @@ import {
   startPlayback,
   isPlaying,
   previewState,
+  createLaserFrame,
+  createCurtainFrame,
 } from "./animation";
 
 // Bank data structure
@@ -92,9 +94,20 @@ export const currentFrame = computed(() => {
       .map(() => Array(SCREEN_WIDTH).fill(false));
   }
 
+  if (state.mode === DisplayMode.LASER && previewState.value) {
+    const { laserPhase, laserX, targetX, activePixels, leftmostPixel } =
+      previewState.value;
+    return createLaserFrame(
+      state.pixels,
+      laserX,
+      targetX,
+      activePixels,
+      leftmostPixel
+    );
+  }
+
   if (state.mode === DisplayMode.CURTAIN && previewState.value) {
     const { curtainPhase, curtainPos } = previewState.value;
-    // Pass isClosing flag based on the phase
     return createCurtainFrame(
       state.pixels,
       curtainPos,
@@ -141,60 +154,16 @@ function shouldCenterText(mode) {
   return mode !== DisplayMode.SCROLL_LEFT && mode !== DisplayMode.SCROLL_RIGHT;
 }
 
-// Helper to create a curtain frame
-function createCurtainFrame(content, curtainPos, isClosing = false) {
-  const frame = Array(SCREEN_HEIGHT)
-    .fill()
-    .map(() => Array(SCREEN_WIDTH).fill(false));
-  const center = Math.floor(SCREEN_WIDTH / 2);
-  const leftCurtain = Math.floor(center - curtainPos);
-  const rightCurtain = Math.floor(center + curtainPos);
-
-  // Copy the visible part of the content
-  for (let y = 0; y < SCREEN_HEIGHT; y++) {
-    if (isClosing) {
-      // During closing, show content everywhere except between the curtain lines
-      for (let x = 0; x < SCREEN_WIDTH; x++) {
-        if (x < leftCurtain || x > rightCurtain) {
-          frame[y][x] = content[y][x];
-        }
-      }
-    } else {
-      // During opening, show content only between the curtain lines
-      for (let x = leftCurtain + 1; x <= rightCurtain; x++) {
-        if (x >= 0 && x < SCREEN_WIDTH) {
-          frame[y][x] = content[y][x];
-        }
+// Helper to find the leftmost column containing pixels
+export function findLeftmostPixel(content) {
+  for (let x = 0; x < SCREEN_WIDTH; x++) {
+    for (let y = 0; y < SCREEN_HEIGHT; y++) {
+      if (content[y][x]) {
+        return x;
       }
     }
-    // Draw the curtain lines
-    if (leftCurtain >= 0 && leftCurtain < SCREEN_WIDTH) {
-      frame[y][leftCurtain] = true;
-    }
-    if (rightCurtain >= 0 && rightCurtain < SCREEN_WIDTH) {
-      frame[y][rightCurtain] = true;
-    }
   }
-  return frame;
-}
-
-// Helper to create a blank frame with optional curtain lines
-function createBlankFrame(curtainPos = null) {
-  const frame = Array(SCREEN_HEIGHT)
-    .fill()
-    .map(() => Array(SCREEN_WIDTH).fill(false));
-  if (curtainPos !== null) {
-    const center = Math.floor(SCREEN_WIDTH / 2);
-    const leftCurtain = Math.floor(center - curtainPos);
-    const rightCurtain = Math.floor(center + curtainPos);
-    if (leftCurtain >= 0 && leftCurtain < SCREEN_WIDTH) {
-      frame.forEach((row) => (row[leftCurtain] = true));
-    }
-    if (rightCurtain >= 0 && rightCurtain < SCREEN_WIDTH) {
-      frame.forEach((row) => (row[rightCurtain] = true));
-    }
-  }
-  return frame;
+  return -1;
 }
 
 // Actions

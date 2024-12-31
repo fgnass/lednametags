@@ -1,5 +1,11 @@
 import { computed, signal } from "@preact/signals";
-import { currentBank, banks, currentBankData, bankHasData } from "./store";
+import {
+  currentBank,
+  banks,
+  currentBankData,
+  bankHasData,
+  findLeftmostPixel,
+} from "./store";
 import {
   DisplayMode,
   SPEED_FPS,
@@ -27,6 +33,80 @@ isCycling.subscribe((value) => {
 
 let playbackTimer = null;
 
+// Helper to create a laser frame
+export function createLaserFrame(
+  content,
+  laserX,
+  targetX = null,
+  activePixels = null,
+  leftmostPixel = null
+) {
+  const frame = Array(SCREEN_HEIGHT)
+    .fill()
+    .map(() => Array(SCREEN_WIDTH).fill(false));
+
+  // Draw already etched pixels in completed columns
+  if (targetX !== null) {
+    for (let x = leftmostPixel; x < targetX; x++) {
+      for (let y = 0; y < SCREEN_HEIGHT; y++) {
+        frame[y][x] = content[y][x];
+      }
+    }
+  }
+
+  // Draw laser lines for current column
+  if (targetX !== null) {
+    // For each row, if there's a pixel in the current column,
+    // draw a line from that position to the right edge
+    for (let y = 0; y < SCREEN_HEIGHT; y++) {
+      if (content[y][targetX]) {
+        for (let x = targetX; x < SCREEN_WIDTH; x++) {
+          frame[y][x] = true;
+        }
+      }
+    }
+  }
+
+  return frame;
+}
+
+// Helper to create a curtain frame
+export function createCurtainFrame(content, curtainPos, isClosing = false) {
+  const frame = Array(SCREEN_HEIGHT)
+    .fill()
+    .map(() => Array(SCREEN_WIDTH).fill(false));
+  const center = Math.floor(SCREEN_WIDTH / 2);
+  const leftCurtain = Math.floor(center - curtainPos);
+  const rightCurtain = Math.floor(center + curtainPos);
+
+  // Copy the visible part of the content
+  for (let y = 0; y < SCREEN_HEIGHT; y++) {
+    if (isClosing) {
+      // During closing, show content everywhere except between the curtain lines
+      for (let x = 0; x < SCREEN_WIDTH; x++) {
+        if (x < leftCurtain || x > rightCurtain) {
+          frame[y][x] = content[y][x];
+        }
+      }
+    } else {
+      // During opening, show content only between the curtain lines
+      for (let x = leftCurtain + 1; x <= rightCurtain; x++) {
+        if (x >= 0 && x < SCREEN_WIDTH) {
+          frame[y][x] = content[y][x];
+        }
+      }
+    }
+    // Draw the curtain lines
+    if (leftCurtain >= 0 && leftCurtain < SCREEN_WIDTH) {
+      frame[y][leftCurtain] = true;
+    }
+    if (rightCurtain >= 0 && rightCurtain < SCREEN_WIDTH) {
+      frame[y][rightCurtain] = true;
+    }
+  }
+  return frame;
+}
+
 // Compute number of frames for animation mode
 export const frameCount = computed(() => {
   const bank = currentBankData.value;
@@ -47,6 +127,11 @@ function setupPreviewState(bankData) {
   };
 
   switch (bankData.mode) {
+    case DisplayMode.LASER:
+      preview.targetX = findLeftmostPixel(preview.pixels);
+      preview.leftmostPixel = preview.targetX;
+      preview.lastPhaseChange = performance.now();
+      break;
     case DisplayMode.CURTAIN:
       preview.curtainPhase = "opening";
       preview.curtainPos = 0;
@@ -83,15 +168,28 @@ function updateAnimation(preview, mode, timestamp) {
   // Handle blink effect
   if (preview.blink) {
     if (timestamp - preview.lastBlinkTime >= 500) {
-      // Blink every 500ms
       preview.blinkState = !preview.blinkState;
       preview.lastBlinkTime = timestamp;
     }
   }
 
+  const timeInPhase = timestamp - preview.lastPhaseChange;
+
   switch (mode) {
+    case DisplayMode.LASER:
+      // Move to next column every 25ms
+      if (timeInPhase >= 25) {
+        preview.targetX++;
+        preview.lastPhaseChange = timestamp;
+
+        if (preview.targetX >= SCREEN_WIDTH) {
+          // Animation complete
+          shouldStop = true;
+        }
+      }
+      break;
+
     case DisplayMode.CURTAIN:
-      const timeInPhase = timestamp - preview.lastPhaseChange;
       const CURTAIN_SPEED = 0.011; // pixels per ms (half screen width in 2000ms)
       const MAX_CURTAIN_DISTANCE = SCREEN_WIDTH / 2 + 1; // Add 1 to ensure left line moves off screen
 
