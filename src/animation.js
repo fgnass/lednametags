@@ -47,6 +47,12 @@ function setupPreviewState(bankData) {
   };
 
   switch (bankData.mode) {
+    case DisplayMode.CURTAIN:
+      preview.curtainPhase = "opening";
+      preview.curtainPos = 0;
+      preview.showContent = false;
+      preview.lastPhaseChange = performance.now();
+      break;
     case DisplayMode.SCROLL_RIGHT:
       preview.viewport = preview.pixels[0].length + 1;
       break;
@@ -84,6 +90,42 @@ function updateAnimation(preview, mode, timestamp) {
   }
 
   switch (mode) {
+    case DisplayMode.CURTAIN:
+      const timeInPhase = timestamp - preview.lastPhaseChange;
+      const CURTAIN_SPEED = 0.011; // pixels per ms (half screen width in 2000ms)
+      const MAX_CURTAIN_DISTANCE = SCREEN_WIDTH / 2 + 1; // Add 1 to ensure left line moves off screen
+
+      if (preview.curtainPhase === "opening") {
+        preview.curtainPos = Math.min(
+          MAX_CURTAIN_DISTANCE,
+          timeInPhase * CURTAIN_SPEED
+        );
+        if (timeInPhase >= 2000) {
+          // 2000ms for opening
+          preview.curtainPhase = "show";
+          preview.lastPhaseChange = timestamp;
+        }
+      } else if (preview.curtainPhase === "show") {
+        if (timeInPhase >= 3000) {
+          // 3000ms for showing content
+          preview.curtainPhase = "closing";
+          preview.curtainPos = 0;
+          preview.lastPhaseChange = timestamp;
+        }
+      } else if (preview.curtainPhase === "closing") {
+        preview.curtainPos = Math.min(
+          MAX_CURTAIN_DISTANCE,
+          timeInPhase * CURTAIN_SPEED
+        );
+        if (timeInPhase >= 2000) {
+          // 2000ms for closing
+          preview.curtainPhase = "opening";
+          preview.curtainPos = 0;
+          preview.lastPhaseChange = timestamp;
+        }
+      }
+      break;
+
     case DisplayMode.ANIMATION:
       preview.currentFrame = (preview.currentFrame + 1) % frameCount.value;
       break;
@@ -204,7 +246,20 @@ export function startPlayback() {
     mode = bankData.mode;
 
     const elapsed = timestamp - lastFrameTime;
-    if (elapsed >= interval) {
+
+    // Curtain mode always updates on each frame, independent of fps
+    if (mode === DisplayMode.CURTAIN) {
+      const preview = { ...previewState.value };
+      const { shouldStop, pauseUntil: newPauseUntil } = updateAnimation(
+        preview,
+        mode,
+        timestamp
+      );
+      pauseUntil = newPauseUntil;
+      previewState.value = preview;
+      lastFrameTime = timestamp;
+    } else if (elapsed >= interval) {
+      // Other modes respect fps setting
       const preview = { ...previewState.value };
       const { shouldStop, pauseUntil: newPauseUntil } = updateAnimation(
         preview,
