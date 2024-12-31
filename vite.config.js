@@ -9,4 +9,12 @@ export default defineConfig({
       "react-dom": "preact/compat",
     },
   },
+  build: {
+    sourcemap: true,
+    rollupOptions: {
+      output: {
+        sourcemapExcludeSources: false,
+      },
+    },
+  },
 });
