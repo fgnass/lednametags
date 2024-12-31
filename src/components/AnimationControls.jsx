@@ -1,4 +1,11 @@
-import { currentBankData, addFrame, deleteFrame, nextFrame, prevFrame, frameCount } from "../store";
+import {
+  currentBankData,
+  addFrame,
+  deleteFrame,
+  nextFrame,
+  prevFrame,
+} from "../store";
+import { frameCount } from "../animation";
 import { ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-preact";
 
 export default function AnimationControls() {
@@ -50,4 +57,4 @@ export default function AnimationControls() {
       </div>
     </div>
   );
-} 
+}

@@ -4,7 +4,7 @@ export const Button = styled("button", {
   base: "px-6 py-3 rounded-lg flex items-center gap-2",
   variants: {
     active: {
-      true: "bg-gray-700",
+      true: "bg-orange-600",
       false: "bg-gray-800 hover:bg-gray-600",
     },
   },

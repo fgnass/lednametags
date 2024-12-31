@@ -5,8 +5,8 @@ import {
   deleteFrame,
   nextFrame,
   prevFrame,
-  frameCount,
 } from "../store";
+import { frameCount } from "../animation";
 import { DisplayMode } from "../constants";
 import { ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-preact";
 import { Button } from "./Button";

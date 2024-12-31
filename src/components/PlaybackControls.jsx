@@ -1,5 +1,8 @@
-import { isPlaying, togglePlayback } from "../store";
-import { Play, Square } from "lucide-preact";
+import { currentBankData } from "../store";
+import { isPlaying, isCycling, togglePlayback } from "../animation";
+import { DisplayMode } from "../constants";
+import { Button } from "./Button";
+import { Play, Pause, Repeat } from "lucide-preact";
 
 export default function PlaybackControls() {
   return (
@@ -12,11 +15,16 @@ export default function PlaybackControls() {
         }`}
         onClick={togglePlayback}
       >
-        {isPlaying.value ? <Square /> : <Play />}
+        {isPlaying.value ? <Pause /> : <Play />}
         {isPlaying.value ? "Stop" : "Play"}
       </button>
       <label class="flex items-center gap-2 text-gray-400 text-sm">
-        <input type="checkbox" class="accent-gray-400" />
+        <input
+          type="checkbox"
+          class="accent-gray-400"
+          checked={isCycling.value}
+          onChange={(e) => (isCycling.value = e.target.checked)}
+        />
         Cycle M1-8
       </label>
     </div>
