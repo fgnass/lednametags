@@ -39,7 +39,8 @@ export function createLaserFrame(
   laserX,
   targetX = null,
   activePixels = null,
-  leftmostPixel = null
+  leftmostPixel = null,
+  isCleanup = false
 ) {
   const frame = Array(SCREEN_HEIGHT)
     .fill()
@@ -47,21 +48,39 @@ export function createLaserFrame(
 
   // Draw already etched pixels in completed columns
   if (targetX !== null) {
-    for (let x = leftmostPixel; x < targetX; x++) {
-      for (let y = 0; y < SCREEN_HEIGHT; y++) {
-        frame[y][x] = content[y][x];
+    if (isCleanup) {
+      // During cleanup, show all pixels from target onwards
+      for (let x = targetX + 1; x < SCREEN_WIDTH; x++) {
+        for (let y = 0; y < SCREEN_HEIGHT; y++) {
+          frame[y][x] = content[y][x];
+        }
+      }
+    } else {
+      // During etching, show all pixels up to target
+      for (let x = 0; x < targetX; x++) {
+        for (let y = 0; y < SCREEN_HEIGHT; y++) {
+          frame[y][x] = content[y][x];
+        }
       }
     }
   }
 
   // Draw laser lines for current column
-  if (targetX !== null) {
+  if (targetX !== null && targetX >= 0 && targetX < SCREEN_WIDTH) {
     // For each row, if there's a pixel in the current column,
-    // draw a line from that position to the right edge
+    // draw a line from that position to the edge
     for (let y = 0; y < SCREEN_HEIGHT; y++) {
       if (content[y][targetX]) {
-        for (let x = targetX; x < SCREEN_WIDTH; x++) {
-          frame[y][x] = true;
+        if (isCleanup) {
+          // Draw line from left edge to target
+          for (let x = 0; x <= targetX; x++) {
+            frame[y][x] = true;
+          }
+        } else {
+          // Draw line from target to right edge
+          for (let x = targetX; x < SCREEN_WIDTH; x++) {
+            frame[y][x] = true;
+          }
         }
       }
     }
@@ -114,6 +133,18 @@ export const frameCount = computed(() => {
   return Math.ceil(bank.pixels[0].length / 44);
 });
 
+// Helper to find the rightmost column containing pixels
+function findRightmostPixel(content) {
+  for (let x = SCREEN_WIDTH - 1; x >= 0; x--) {
+    for (let y = 0; y < SCREEN_HEIGHT; y++) {
+      if (content[y][x]) {
+        return x;
+      }
+    }
+  }
+  return -1;
+}
+
 // Helper to set up preview state for a bank
 function setupPreviewState(bankData) {
   const preview = {
@@ -128,9 +159,9 @@ function setupPreviewState(bankData) {
 
   switch (bankData.mode) {
     case DisplayMode.LASER:
-      preview.targetX = findLeftmostPixel(preview.pixels);
-      preview.leftmostPixel = preview.targetX;
+      preview.targetX = -1;
       preview.lastPhaseChange = performance.now();
+      preview.isCleanup = false;
       break;
     case DisplayMode.CURTAIN:
       preview.curtainPhase = "opening";
@@ -160,6 +191,14 @@ function setupPreviewState(bankData) {
   return preview;
 }
 
+// Helper to check if a column has any pixels
+function hasPixelsInColumn(content, x) {
+  for (let y = 0; y < SCREEN_HEIGHT; y++) {
+    if (content[y][x]) return true;
+  }
+  return false;
+}
+
 // Handle animation frame updates
 function updateAnimation(preview, mode, timestamp) {
   let shouldStop = false;
@@ -177,14 +216,49 @@ function updateAnimation(preview, mode, timestamp) {
 
   switch (mode) {
     case DisplayMode.LASER:
-      // Move to next column every 25ms
-      if (timeInPhase >= 25) {
-        preview.targetX++;
-        preview.lastPhaseChange = timestamp;
+      if (!preview.isCleanup) {
+        // Etching phase
+        if (timeInPhase >= 100) {
+          // Find next column with pixels
+          do {
+            preview.targetX++;
+          } while (
+            preview.targetX < SCREEN_WIDTH &&
+            !hasPixelsInColumn(preview.pixels, preview.targetX)
+          );
 
-        if (preview.targetX >= SCREEN_WIDTH) {
-          // Animation complete
-          shouldStop = true;
+          preview.lastPhaseChange = timestamp;
+
+          if (preview.targetX >= SCREEN_WIDTH) {
+            // Start cleanup after 4s pause
+            preview.isCleanup = true;
+            preview.targetX = -1;
+            pauseUntil = timestamp + 4000;
+          }
+        }
+      } else {
+        // Cleanup phase
+        if (timeInPhase >= 100) {
+          // Find next column with pixels
+          do {
+            preview.targetX++;
+          } while (
+            preview.targetX < SCREEN_WIDTH &&
+            !hasPixelsInColumn(preview.pixels, preview.targetX)
+          );
+
+          preview.lastPhaseChange = timestamp;
+
+          if (preview.targetX >= SCREEN_WIDTH) {
+            if (isCycling.value) {
+              shouldStop = true;
+            } else {
+              // Start over after 3s pause
+              preview.isCleanup = false;
+              preview.targetX = -1;
+              pauseUntil = timestamp + 3000;
+            }
+          }
         }
       }
       break;
@@ -345,8 +419,8 @@ export function startPlayback() {
 
     const elapsed = timestamp - lastFrameTime;
 
-    // Curtain mode always updates on each frame, independent of fps
-    if (mode === DisplayMode.CURTAIN) {
+    // Laser and Curtain modes always update on each frame, independent of fps
+    if (mode === DisplayMode.LASER || mode === DisplayMode.CURTAIN) {
       const preview = { ...previewState.value };
       const { shouldStop, pauseUntil: newPauseUntil } = updateAnimation(
         preview,
@@ -356,6 +430,19 @@ export function startPlayback() {
       pauseUntil = newPauseUntil;
       previewState.value = preview;
       lastFrameTime = timestamp;
+
+      if (shouldStop && isCycling.value) {
+        const nextBank = findNextBank(currentBank.value, initialBank);
+        pauseUntil = timestamp + 1000;
+
+        if (nextBank !== initialBank && bankHasData.value[nextBank]) {
+          currentBank.value = nextBank;
+          previewState.value = setupPreviewState(banks[nextBank].value);
+        } else {
+          currentBank.value = initialBank;
+          previewState.value = setupPreviewState(banks[initialBank].value);
+        }
+      }
     } else if (elapsed >= interval) {
       // Other modes respect fps setting
       const preview = { ...previewState.value };

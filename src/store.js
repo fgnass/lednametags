@@ -95,14 +95,21 @@ export const currentFrame = computed(() => {
   }
 
   if (state.mode === DisplayMode.LASER && previewState.value) {
-    const { laserPhase, laserX, targetX, activePixels, leftmostPixel } =
-      previewState.value;
+    const {
+      laserPhase,
+      laserX,
+      targetX,
+      activePixels,
+      leftmostPixel,
+      isCleanup,
+    } = previewState.value;
     return createLaserFrame(
       state.pixels,
       laserX,
       targetX,
       activePixels,
-      leftmostPixel
+      leftmostPixel,
+      isCleanup
     );
   }
 
