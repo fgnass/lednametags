@@ -21,24 +21,8 @@ export const frameCount = computed(() => {
   return Math.ceil(bank.pixels[0].length / 44);
 });
 
-export function togglePlayback() {
-  if (isPlaying.value) {
-    stopPlayback();
-  } else {
-    startPlayback();
-  }
-}
-
-export function startPlayback() {
-  if (playbackTimer) return;
-  isPlaying.value = true;
-
-  // Store initial bank for cycling
-  const initialBank = currentBank.value;
-  const bank = banks[currentBank.value];
-  const bankData = bank.value;
-
-  // Create preview state
+// Helper to set up preview state for a bank
+function setupPreviewState(bankData) {
   const preview = {
     pixels: [...bankData.pixels.map((row) => [...row])],
     viewport: 0,
@@ -66,11 +50,36 @@ export function startPlayback() {
         : -1;
   }
 
-  previewState.value = preview;
+  return preview;
+}
+
+export function togglePlayback() {
+  if (isPlaying.value) {
+    stopPlayback();
+  } else {
+    startPlayback();
+  }
+}
+
+export function startPlayback() {
+  if (playbackTimer) return;
+  isPlaying.value = true;
+
+  // Store initial bank for cycling
+  const initialBank = currentBank.value;
+  console.log(`Starting playback from bank ${initialBank}`);
+  console.log("Bank data:", bankHasData.value);
+
+  const bank = banks[currentBank.value];
+  const bankData = bank.value;
+
+  // Create initial preview state
+  previewState.value = setupPreviewState(bankData);
 
   const fps = SPEED_FPS[bankData.speed - 1];
   const interval = Math.round(1000 / fps);
   const mode = bankData.mode;
+  console.log(`Mode: ${mode}, Speed: ${fps} fps`);
 
   let lastFrameTime = 0;
   let pauseUntil = 0;
@@ -97,8 +106,13 @@ export function startPlayback() {
           if (preview.viewport < preview.pixels[0].length) {
             preview.viewport++;
           } else {
-            pauseUntil = timestamp + 1000;
-            preview.viewport = -(SCREEN_WIDTH + 1);
+            console.log("Scroll left complete, resetting");
+            if (isCycling.value) {
+              shouldStop = true;
+            } else {
+              pauseUntil = timestamp + 1000;
+              preview.viewport = -(SCREEN_WIDTH + 1);
+            }
           }
           break;
 
@@ -106,8 +120,13 @@ export function startPlayback() {
           if (preview.viewport > -SCREEN_WIDTH) {
             preview.viewport--;
           } else {
-            pauseUntil = timestamp + 1000;
-            preview.viewport = preview.pixels[0].length + 1;
+            console.log("Scroll right complete, resetting");
+            if (isCycling.value) {
+              shouldStop = true;
+            } else {
+              pauseUntil = timestamp + 1000;
+              preview.viewport = preview.pixels[0].length + 1;
+            }
           }
           break;
 
@@ -119,21 +138,35 @@ export function startPlayback() {
 
           if (isScrollUp) {
             if (currentPos === SCREEN_HEIGHT - 1) {
+              console.log("Scroll up pause point");
               pauseUntil = timestamp + 1000;
             }
             if (currentPos < totalHeight - SCREEN_HEIGHT) {
               preview.viewport++;
             } else {
-              shouldStop = true;
+              console.log("Scroll up complete");
+              if (isCycling.value) {
+                shouldStop = true;
+              } else {
+                pauseUntil = timestamp + 1000;
+                preview.viewport = -1;
+              }
             }
           } else {
             if (currentPos === SCREEN_HEIGHT + 1) {
+              console.log("Scroll down pause point");
               pauseUntil = timestamp + 1000;
             }
             if (currentPos > 0) {
               preview.viewport--;
             } else {
-              shouldStop = true;
+              console.log("Scroll down complete");
+              if (isCycling.value) {
+                shouldStop = true;
+              } else {
+                pauseUntil = timestamp + 1000;
+                preview.viewport = preview.pixels.length - SCREEN_HEIGHT;
+              }
             }
           }
           break;
@@ -147,15 +180,32 @@ export function startPlayback() {
         if (isCycling.value) {
           // Find next bank with data
           let nextBank = (currentBank.value + 1) % 8;
+          console.log(
+            `Cycling: current=${currentBank.value} next=${nextBank} initial=${initialBank}`
+          );
+          console.log("Bank data:", bankHasData.value);
+
           while (nextBank !== initialBank && !bankHasData.value[nextBank]) {
             nextBank = (nextBank + 1) % 8;
+            console.log(`Skipping empty bank, trying ${nextBank}`);
           }
 
+          // Set up next bank with pause
+          pauseUntil = timestamp + 1000;
           if (nextBank !== initialBank && bankHasData.value[nextBank]) {
+            console.log(`Moving to next bank: ${nextBank}`);
+            // Update current bank before starting new animation
             currentBank.value = nextBank;
-            startPlayback();
-            return;
+            previewState.value = setupPreviewState(banks[nextBank].value);
+          } else {
+            console.log(
+              `Cycle complete, returning to initial bank: ${initialBank}`
+            );
+            // We've completed a full cycle, start over from the initial bank
+            currentBank.value = initialBank;
+            previewState.value = setupPreviewState(banks[initialBank].value);
           }
+          shouldStop = false;
         } else if (
           mode === DisplayMode.SCROLL_UP ||
           mode === DisplayMode.SCROLL_DOWN
