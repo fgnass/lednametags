@@ -85,6 +85,13 @@ export const currentFrame = computed(() => {
   // Use preview state if available
   const state = previewState.value || currentBankData.value;
 
+  // If blinking and in hidden state, return empty frame
+  if (state.blink && previewState.value?.blinkState === false) {
+    return Array(SCREEN_HEIGHT)
+      .fill()
+      .map(() => Array(SCREEN_WIDTH).fill(false));
+  }
+
   if (
     state.mode === DisplayMode.SCROLL_UP ||
     state.mode === DisplayMode.SCROLL_DOWN

@@ -120,3 +120,52 @@ export async function uploadToDevice() {
     return false;
   }
 }
+
+// Check if device is already connected
+export async function checkConnection() {
+  try {
+    const devices = await navigator.hid.getDevices();
+    const existingDevice = devices.find(
+      (d) => d.vendorId === VENDOR_ID && d.productId === PRODUCT_ID
+    );
+
+    if (existingDevice) {
+      device = existingDevice;
+      if (!device.opened) {
+        await device.open();
+      }
+      isConnected.value = true;
+      return true;
+    }
+
+    return false;
+  } catch (error) {
+    console.error("Error checking connection:", error);
+    return false;
+  }
+}
+
+// Sync function that handles the entire flow
+export async function sync() {
+  try {
+    // First check if we're already connected
+    if (!(await checkConnection())) {
+      // If not, try to connect
+      if (!(await connectToDevice())) {
+        throw new Error("Could not connect to device");
+      }
+    }
+
+    // Now upload the data
+    if (!(await uploadToDevice())) {
+      throw new Error("Failed to upload data to device");
+    }
+
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.message || "Unknown error occurred",
+    };
+  }
+}

@@ -41,6 +41,9 @@ function setupPreviewState(bankData) {
     viewport: 0,
     currentFrame: bankData.currentFrame,
     mode: bankData.mode,
+    blink: bankData.blink,
+    blinkState: true,
+    lastBlinkTime: 0,
   };
 
   switch (bankData.mode) {
@@ -70,6 +73,15 @@ function setupPreviewState(bankData) {
 function updateAnimation(preview, mode, timestamp) {
   let shouldStop = false;
   let pauseUntil = 0;
+
+  // Handle blink effect
+  if (preview.blink) {
+    if (timestamp - preview.lastBlinkTime >= 500) {
+      // Blink every 500ms
+      preview.blinkState = !preview.blinkState;
+      preview.lastBlinkTime = timestamp;
+    }
+  }
 
   switch (mode) {
     case DisplayMode.ANIMATION:
