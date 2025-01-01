@@ -1,8 +1,5 @@
-import { currentBankData } from "../store";
 import { isPlaying, isCycling, togglePlayback } from "../animation";
-import { DisplayMode } from "../constants";
-import { Button } from "./Button";
-import { Play, Pause, Repeat } from "lucide-preact";
+import { Play, Pause } from "lucide-preact";
 
 export default function PlaybackControls() {
   return (

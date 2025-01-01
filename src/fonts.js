@@ -1,5 +1,5 @@
 import { signal } from "@preact/signals";
-import { DisplayMode, SCREEN_WIDTH, SCREEN_HEIGHT } from "./constants";
+import { SCREEN_WIDTH, SCREEN_HEIGHT } from "./constants";
 
 // Canvas setup
 function setupCanvas() {

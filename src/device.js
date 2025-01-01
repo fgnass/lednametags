@@ -1,4 +1,4 @@
-import { DisplayMode, VENDOR_ID, PRODUCT_ID, PACKET_SIZE } from "./constants";
+import { VENDOR_ID, PRODUCT_ID, PACKET_SIZE } from "./constants";
 import { isConnected, banks } from "./store";
 import { createHeader, framesToDeviceFormat } from "./utils";
 

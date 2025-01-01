@@ -1,4 +1,4 @@
-import { togglePixel, currentBankData } from "../store";
+import { togglePixel } from "../store";
 import { currentFrame } from "../animation";
 import { useEffect, useState } from "preact/hooks";
 

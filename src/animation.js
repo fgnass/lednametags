@@ -1,11 +1,5 @@
 import { computed, signal } from "@preact/signals";
-import {
-  currentBank,
-  banks,
-  currentBankData,
-  bankHasData,
-  findLeftmostPixel,
-} from "./store";
+import { currentBank, banks, currentBankData, bankHasData } from "./store";
 import {
   DisplayMode,
   SPEED_FPS,
@@ -33,28 +27,24 @@ isCycling.subscribe((value) => {
   localStorage.setItem("lednametags-state", JSON.stringify(state));
 });
 
+// Animation timers
 let playbackTimer = null;
 let blinkTimer = null;
+let antsTimer = null;
 
+// Blink animation
 export function startBlinkAnimation() {
   if (blinkTimer) return;
   let lastTime = performance.now();
-  console.log("Starting blink animation");
 
   const animate = (timestamp) => {
     if (timestamp - lastTime >= 500) {
-      const newState = !blinkState.value;
-      console.log("Toggling blink state:", {
-        old: blinkState.value,
-        new: newState,
-      });
-      blinkState.value = newState;
+      blinkState.value = !blinkState.value;
       lastTime = timestamp;
     }
     if (isPlaying.value) {
       blinkTimer = requestAnimationFrame(animate);
     } else {
-      console.log("Stopping blink animation - not playing");
       cancelBlinkAnimation();
     }
   };
@@ -62,7 +52,6 @@ export function startBlinkAnimation() {
 }
 
 export function cancelBlinkAnimation() {
-  console.log("Cancelling blink animation");
   if (blinkTimer) {
     cancelAnimationFrame(blinkTimer);
     blinkTimer = null;
@@ -70,8 +59,7 @@ export function cancelBlinkAnimation() {
   blinkState.value = true;
 }
 
-// Start ants animation loop
-let antsTimer = null;
+// Ants animation
 function startAntsAnimation() {
   if (antsTimer) return;
   let lastTime = performance.now();
@@ -96,6 +84,66 @@ function cancelAntsAnimation() {
     antsTimer = null;
   }
   antsOffset.value = 0;
+}
+
+// Helper to create an ants frame
+function createAntsFrame(offset) {
+  return Array(SCREEN_HEIGHT)
+    .fill()
+    .map((_, y) =>
+      Array(SCREEN_WIDTH)
+        .fill(false)
+        .map((_, x) => {
+          // Only apply to border pixels
+          if (
+            y === 0 ||
+            y === SCREEN_HEIGHT - 1 ||
+            x === 0 ||
+            x === SCREEN_WIDTH - 1
+          ) {
+            // Calculate position along the border (counter-clockwise from top-left)
+            let borderPos;
+            if (y === 0) borderPos = x; // Top edge (left to right)
+            else if (x === SCREEN_WIDTH - 1)
+              borderPos = y + SCREEN_WIDTH - 1; // Right edge (top to bottom)
+            else if (y === SCREEN_HEIGHT - 1)
+              borderPos = 2 * SCREEN_WIDTH + SCREEN_HEIGHT - 3 - x;
+            // Bottom edge (right to left)
+            else borderPos = 2 * (SCREEN_WIDTH + SCREEN_HEIGHT - 2) - y; // Left edge (bottom to top)
+
+            // Create marching pattern
+            return (borderPos + offset) % 4 === 0;
+          }
+          return false;
+        })
+    );
+}
+
+// Helper to apply post-processing effects (blink & ants)
+function applyEffects(frame, state) {
+  let contentFrame = frame;
+  let antsFrame = null;
+
+  // First, create the ants frame if needed
+  if (state.ants) {
+    antsFrame = createAntsFrame(antsOffset.value);
+  }
+
+  // Then handle blinking of content
+  if (state.blink && !state.blinkState) {
+    contentFrame = Array(SCREEN_HEIGHT)
+      .fill()
+      .map(() => Array(SCREEN_WIDTH).fill(false));
+  }
+
+  // Finally, combine content and ants
+  if (antsFrame) {
+    return contentFrame.map((row, y) =>
+      row.map((pixel, x) => pixel || antsFrame[y][x])
+    );
+  }
+
+  return contentFrame;
 }
 
 // Helper to create a laser frame
@@ -579,79 +627,9 @@ export function stopPlayback() {
   cancelBlinkAnimation();
 }
 
-// Helper to apply post-processing effects (blink & ants)
-function applyEffects(frame, state) {
-  let contentFrame = frame;
-  let antsFrame = null;
-
-  console.log("Applying effects:", {
-    blink: state.blink,
-    blinkState: state.blinkState,
-    ants: state.ants,
-    hasFrame: !!frame,
-  });
-
-  // First, create the ants frame if needed
-  if (state.ants) {
-    const offset = antsOffset.value;
-    antsFrame = Array(SCREEN_HEIGHT)
-      .fill()
-      .map((_, y) =>
-        Array(SCREEN_WIDTH)
-          .fill(false)
-          .map((_, x) => {
-            // Only apply to border pixels
-            if (
-              y === 0 ||
-              y === SCREEN_HEIGHT - 1 ||
-              x === 0 ||
-              x === SCREEN_WIDTH - 1
-            ) {
-              // Calculate position along the border (counter-clockwise from top-left)
-              let borderPos;
-              if (y === 0) borderPos = x; // Top edge (left to right)
-              else if (x === SCREEN_WIDTH - 1)
-                borderPos = y + SCREEN_WIDTH - 1; // Right edge (top to bottom)
-              else if (y === SCREEN_HEIGHT - 1)
-                borderPos = 2 * SCREEN_WIDTH + SCREEN_HEIGHT - 3 - x;
-              // Bottom edge (right to left)
-              else borderPos = 2 * (SCREEN_WIDTH + SCREEN_HEIGHT - 2) - y; // Left edge (bottom to top)
-
-              // Create marching pattern
-              return (borderPos + offset) % 4 === 0;
-            }
-            return false;
-          })
-      );
-  }
-
-  // Then handle blinking of content
-  if (state.blink && !state.blinkState) {
-    console.log("Applying blink effect - hiding content");
-    contentFrame = Array(SCREEN_HEIGHT)
-      .fill()
-      .map(() => Array(SCREEN_WIDTH).fill(false));
-  }
-
-  // Finally, combine content and ants
-  if (antsFrame) {
-    return contentFrame.map((row, y) =>
-      row.map((pixel, x) => pixel || antsFrame[y][x])
-    );
-  }
-
-  return contentFrame;
-}
-
 export const currentFrame = computed(() => {
   // Use preview state if available
   const state = previewState.value || currentBankData.value;
-  console.log("Computing frame:", {
-    mode: state.mode,
-    hasPreview: !!previewState.value,
-    ants: currentBankData.value.ants,
-    blink: state.blink,
-  });
   let frame;
 
   if (state.mode === DisplayMode.LASER && previewState.value) {
@@ -708,6 +686,5 @@ export const currentFrame = computed(() => {
     blinkState: previewState.value?.blinkState ?? blinkState.value,
     ants: currentBankData.value.ants,
   };
-  console.log("Effect state:", effectState);
   return applyEffects(frame, effectState);
 });

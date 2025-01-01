@@ -1,11 +1,6 @@
 import { signal, computed } from "@preact/signals";
-import {
-  DisplayMode,
-  SPEED_FPS,
-  SCREEN_WIDTH,
-  SCREEN_HEIGHT,
-} from "./constants";
-import { textToPixels, currentFont } from "./fonts";
+import { DisplayMode, SCREEN_WIDTH, SCREEN_HEIGHT } from "./constants";
+import { textToPixels } from "./fonts";
 import { calculateBankMemory, DEVICE_MEMORY } from "./utils";
 import {
   frameCount,
@@ -161,18 +156,6 @@ export const currentFrame = computed(() => {
 // Helper to determine if text should be centered based on mode
 function shouldCenterText(mode) {
   return mode !== DisplayMode.SCROLL_LEFT && mode !== DisplayMode.SCROLL_RIGHT;
-}
-
-// Helper to find the leftmost column containing pixels
-export function findLeftmostPixel(content) {
-  for (let x = 0; x < SCREEN_WIDTH; x++) {
-    for (let y = 0; y < SCREEN_HEIGHT; y++) {
-      if (content[y][x]) {
-        return x;
-      }
-    }
-  }
-  return -1;
 }
 
 // Actions
@@ -381,7 +364,6 @@ export function deleteFrame() {
   if (frameCount.value <= 1) return;
 
   const start = data.currentFrame * SCREEN_WIDTH;
-  const end = start + SCREEN_WIDTH;
 
   // Remove the current frame's pixels
   data.pixels = data.pixels.map((row) => {
