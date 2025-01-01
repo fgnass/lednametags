@@ -16,6 +16,8 @@ import {
 // Animation state
 export const isPlaying = signal(false);
 export const previewState = signal(null);
+export const antsOffset = signal(0);
+export const blinkState = signal(true);
 
 // Load cycling state from local storage
 const savedState = JSON.parse(
@@ -32,6 +34,69 @@ isCycling.subscribe((value) => {
 });
 
 let playbackTimer = null;
+let blinkTimer = null;
+
+export function startBlinkAnimation() {
+  if (blinkTimer) return;
+  let lastTime = performance.now();
+  console.log("Starting blink animation");
+
+  const animate = (timestamp) => {
+    if (timestamp - lastTime >= 500) {
+      const newState = !blinkState.value;
+      console.log("Toggling blink state:", {
+        old: blinkState.value,
+        new: newState,
+      });
+      blinkState.value = newState;
+      lastTime = timestamp;
+    }
+    if (isPlaying.value) {
+      blinkTimer = requestAnimationFrame(animate);
+    } else {
+      console.log("Stopping blink animation - not playing");
+      cancelBlinkAnimation();
+    }
+  };
+  blinkTimer = requestAnimationFrame(animate);
+}
+
+export function cancelBlinkAnimation() {
+  console.log("Cancelling blink animation");
+  if (blinkTimer) {
+    cancelAnimationFrame(blinkTimer);
+    blinkTimer = null;
+  }
+  blinkState.value = true;
+}
+
+// Start ants animation loop
+let antsTimer = null;
+function startAntsAnimation() {
+  if (antsTimer) return;
+  let lastTime = performance.now();
+
+  const animate = (timestamp) => {
+    if (!isPlaying.value) {
+      cancelAntsAnimation();
+      return;
+    }
+    if (timestamp - lastTime >= 200) {
+      antsOffset.value = (antsOffset.value + 1) % 4;
+      lastTime = timestamp;
+    }
+    antsTimer = requestAnimationFrame(animate);
+  };
+  antsTimer = requestAnimationFrame(animate);
+}
+
+function cancelAntsAnimation() {
+  if (antsTimer) {
+    cancelAnimationFrame(antsTimer);
+    antsTimer = null;
+  }
+  antsOffset.value = 0;
+}
 
 // Helper to create a laser frame
 export function createLaserFrame(
@@ -123,6 +188,7 @@ export function createCurtainFrame(content, curtainPos, isClosing = false) {
       frame[y][rightCurtain] = true;
     }
   }
+
   return frame;
 }
 
@@ -153,8 +219,11 @@ function setupPreviewState(bankData) {
     currentFrame: bankData.currentFrame,
     mode: bankData.mode,
     blink: bankData.blink,
-    blinkState: true,
-    lastBlinkTime: 0,
+    blinkState: blinkState.value,
+    lastBlinkTime: performance.now(),
+    ants: bankData.ants,
+    lastAntsTime: 0,
+    antsOffset: 0,
   };
 
   switch (bankData.mode) {
@@ -209,6 +278,14 @@ function updateAnimation(preview, mode, timestamp) {
     if (timestamp - preview.lastBlinkTime >= 500) {
       preview.blinkState = !preview.blinkState;
       preview.lastBlinkTime = timestamp;
+    }
+  }
+
+  // Handle ants effect
+  if (preview.ants) {
+    if (timestamp - preview.lastAntsTime >= 200) {
+      preview.antsOffset = (preview.antsOffset + 1) % 4;
+      preview.lastAntsTime = timestamp;
     }
   }
 
@@ -392,10 +469,16 @@ export function togglePlayback() {
 export function startPlayback() {
   if (playbackTimer) return;
   isPlaying.value = true;
+  startAntsAnimation();
 
   const initialBank = currentBank.value;
   let bank = banks[currentBank.value];
   let bankData = bank.value;
+
+  // Only start blink animation if blinking is enabled
+  if (bankData.blink) {
+    startBlinkAnimation();
+  }
 
   previewState.value = setupPreviewState(bankData);
 
@@ -492,4 +575,139 @@ export function stopPlayback() {
   }
   isPlaying.value = false;
   previewState.value = null;
+  cancelAntsAnimation();
+  cancelBlinkAnimation();
 }
+
+// Helper to apply post-processing effects (blink & ants)
+function applyEffects(frame, state) {
+  let contentFrame = frame;
+  let antsFrame = null;
+
+  console.log("Applying effects:", {
+    blink: state.blink,
+    blinkState: state.blinkState,
+    ants: state.ants,
+    hasFrame: !!frame,
+  });
+
+  // First, create the ants frame if needed
+  if (state.ants) {
+    const offset = antsOffset.value;
+    antsFrame = Array(SCREEN_HEIGHT)
+      .fill()
+      .map((_, y) =>
+        Array(SCREEN_WIDTH)
+          .fill(false)
+          .map((_, x) => {
+            // Only apply to border pixels
+            if (
+              y === 0 ||
+              y === SCREEN_HEIGHT - 1 ||
+              x === 0 ||
+              x === SCREEN_WIDTH - 1
+            ) {
+              // Calculate position along the border (counter-clockwise from top-left)
+              let borderPos;
+              if (y === 0) borderPos = x; // Top edge (left to right)
+              else if (x === SCREEN_WIDTH - 1)
+                borderPos = y + SCREEN_WIDTH - 1; // Right edge (top to bottom)
+              else if (y === SCREEN_HEIGHT - 1)
+                borderPos = 2 * SCREEN_WIDTH + SCREEN_HEIGHT - 3 - x;
+              // Bottom edge (right to left)
+              else borderPos = 2 * (SCREEN_WIDTH + SCREEN_HEIGHT - 2) - y; // Left edge (bottom to top)
+
+              // Create marching pattern
+              return (borderPos + offset) % 4 === 0;
+            }
+            return false;
+          })
+      );
+  }
+
+  // Then handle blinking of content
+  if (state.blink && !state.blinkState) {
+    console.log("Applying blink effect - hiding content");
+    contentFrame = Array(SCREEN_HEIGHT)
+      .fill()
+      .map(() => Array(SCREEN_WIDTH).fill(false));
+  }
+
+  // Finally, combine content and ants
+  if (antsFrame) {
+    return contentFrame.map((row, y) =>
+      row.map((pixel, x) => pixel || antsFrame[y][x])
+    );
+  }
+
+  return contentFrame;
+}
+
+export const currentFrame = computed(() => {
+  // Use preview state if available
+  const state = previewState.value || currentBankData.value;
+  console.log("Computing frame:", {
+    mode: state.mode,
+    hasPreview: !!previewState.value,
+    ants: currentBankData.value.ants,
+    blink: state.blink,
+  });
+  let frame;
+
+  if (state.mode === DisplayMode.LASER && previewState.value) {
+    frame = createLaserFrame(
+      state.pixels,
+      previewState.value.laserX,
+      previewState.value.targetX,
+      previewState.value.activePixels,
+      previewState.value.leftmostPixel,
+      previewState.value.isCleanup
+    );
+  } else if (state.mode === DisplayMode.CURTAIN && previewState.value) {
+    frame = createCurtainFrame(
+      state.pixels,
+      previewState.value.curtainPos,
+      previewState.value.curtainPhase === "closing"
+    );
+  } else if (
+    state.mode === DisplayMode.SCROLL_UP ||
+    state.mode === DisplayMode.SCROLL_DOWN
+  ) {
+    // For vertical scrolling, take a slice of rows
+    // Handle negative viewport by showing blank rows
+    const viewport = Math.max(0, state.viewport);
+    frame = state.pixels
+      .slice(viewport, viewport + 11)
+      .map((row) => row.slice(0, 44));
+  } else {
+    // For horizontal modes
+    const start =
+      state.mode === DisplayMode.ANIMATION
+        ? state.currentFrame * 44
+        : state.viewport;
+    const end = start + 44;
+    frame = state.pixels.map((row) => {
+      if (start < 0) {
+        // Handle negative viewport by showing blank columns
+        const visible = row.slice(0, Math.max(0, end));
+        return [...Array(Math.min(44, -start)).fill(false), ...visible];
+      }
+      if (start >= row.length) {
+        return Array(44).fill(false);
+      }
+      if (end > row.length) {
+        return [...row.slice(start), ...Array(end - row.length).fill(false)];
+      }
+      return row.slice(start, end);
+    });
+  }
+
+  // Apply post-processing effects
+  const effectState = {
+    blink: state.blink,
+    blinkState: previewState.value?.blinkState ?? blinkState.value,
+    ants: currentBankData.value.ants,
+  };
+  console.log("Effect state:", effectState);
+  return applyEffects(frame, effectState);
+});

@@ -15,6 +15,8 @@ import {
   previewState,
   createLaserFrame,
   createCurtainFrame,
+  startBlinkAnimation,
+  cancelBlinkAnimation,
 } from "./animation";
 
 // Bank data structure
@@ -411,6 +413,23 @@ export const memoryPercent = computed(() => {
 export function setBlink(value) {
   const bank = banks[currentBank.value];
   bank.value = { ...bank.value, blink: value };
+
+  // If we're playing, handle the blink animation and update preview state
+  if (isPlaying.value) {
+    if (value) {
+      startBlinkAnimation();
+    } else {
+      cancelBlinkAnimation();
+    }
+
+    // Update preview state if it exists
+    if (previewState.value) {
+      previewState.value = {
+        ...previewState.value,
+        blink: value,
+      };
+    }
+  }
 }
 
 export function setAnts(value) {
