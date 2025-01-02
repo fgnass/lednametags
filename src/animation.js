@@ -522,7 +522,11 @@ export function togglePlayback() {
 }
 
 export function startPlayback() {
-  if (playbackTimer) return;
+  if (playbackTimer) {
+    // Clean up any existing animation
+    stopPlayback();
+  }
+
   isPlaying.value = true;
   startAntsAnimation();
 
@@ -535,6 +539,7 @@ export function startPlayback() {
     startBlinkAnimation();
   }
 
+  // Reset preview state
   previewState.value = setupPreviewState(bankData);
 
   let fps = SPEED_FPS[bankData.speed - 1];
@@ -632,16 +637,26 @@ export function stopPlayback() {
   previewState.value = null;
   cancelAntsAnimation();
   cancelBlinkAnimation();
+
+  // Reset any animation-specific state
+  antsOffset.value = 0;
+  blinkState.value = true;
 }
 
 export const currentFrame = computed(() => {
   // Use preview state if available
   const state = previewState.value || currentBankData.value;
   let frame;
+  let content = state.pixels;
+
+  // Apply device-style centering to the content first if needed
+  if (shouldDeviceCenter(state.mode)) {
+    content = applyDeviceCentering(content);
+  }
 
   if (state.mode === DisplayMode.LASER && previewState.value) {
     frame = createLaserFrame(
-      state.pixels,
+      content, // Use centered content
       previewState.value.laserX,
       previewState.value.targetX,
       previewState.value.activePixels,
@@ -650,7 +665,7 @@ export const currentFrame = computed(() => {
     );
   } else if (state.mode === DisplayMode.CURTAIN && previewState.value) {
     frame = createCurtainFrame(
-      state.pixels,
+      content, // Use centered content
       previewState.value.curtainPos,
       previewState.value.curtainPhase === "closing"
     );
@@ -661,19 +676,17 @@ export const currentFrame = computed(() => {
     // For vertical scrolling, take a slice of rows
     // Handle negative viewport by showing blank rows
     const viewport = Math.max(0, state.viewport);
-    frame = state.pixels
-      .slice(viewport, viewport + SCREEN_HEIGHT)
-      .map((row) => {
-        // Always ensure each row has exactly SCREEN_WIDTH pixels
-        const paddedRow = row.slice(0, SCREEN_WIDTH);
-        if (paddedRow.length < SCREEN_WIDTH) {
-          return [
-            ...paddedRow,
-            ...Array(SCREEN_WIDTH - paddedRow.length).fill(false),
-          ];
-        }
-        return paddedRow;
-      });
+    frame = content.slice(viewport, viewport + SCREEN_HEIGHT).map((row) => {
+      // Always ensure each row has exactly SCREEN_WIDTH pixels
+      const paddedRow = row.slice(0, SCREEN_WIDTH);
+      if (paddedRow.length < SCREEN_WIDTH) {
+        return [
+          ...paddedRow,
+          ...Array(SCREEN_WIDTH - paddedRow.length).fill(false),
+        ];
+      }
+      return paddedRow;
+    });
 
     // If we don't have enough rows, pad with blank rows
     if (frame.length < SCREEN_HEIGHT) {
@@ -689,7 +702,7 @@ export const currentFrame = computed(() => {
         ? state.currentFrame * SCREEN_WIDTH
         : state.viewport;
     const end = start + SCREEN_WIDTH;
-    frame = state.pixels.map((row) => {
+    frame = content.map((row) => {
       if (start < 0) {
         // Handle negative viewport by showing blank columns
         const visible = row.slice(0, Math.max(0, end));
@@ -721,11 +734,6 @@ export const currentFrame = computed(() => {
       }
       return slice;
     });
-  }
-
-  // Apply device-style centering for non-scrolling modes
-  if (shouldDeviceCenter(state.mode)) {
-    frame = applyDeviceCentering(frame);
   }
 
   // Apply post-processing effects

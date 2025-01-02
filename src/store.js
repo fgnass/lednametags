@@ -8,8 +8,6 @@ import {
   startPlayback,
   isPlaying,
   previewState,
-  createLaserFrame,
-  createCurtainFrame,
   startBlinkAnimation,
   cancelBlinkAnimation,
 } from "./animation";
@@ -34,6 +32,15 @@ function createBank() {
 // Store
 export const currentBank = signal(0);
 export const isConnected = signal(false);
+
+// Handle bank changes during playback
+currentBank.subscribe(() => {
+  // Check if animation functions are available (they might not be during initial module load)
+  if (isPlaying?.value && stopPlayback && startPlayback) {
+    stopPlayback();
+    startPlayback();
+  }
+});
 
 // Load state from local storage or create initial state
 const savedState = JSON.parse(
