@@ -80,83 +80,118 @@ export const bankMemory = computed(() =>
   banks.map((bank) => calculateBankMemory(bank.value))
 );
 
+// Helper to find the rightmost pixel in a frame
+function findRightmostPixel(pixels) {
+  for (let x = pixels[0].length - 1; x >= 0; x--) {
+    for (let y = 0; y < pixels.length; y++) {
+      if (pixels[y][x]) {
+        return x;
+      }
+    }
+  }
+  return -1;
+}
+
+// Helper to determine if mode needs device-style centering
+function shouldDeviceCenter(mode) {
+  return (
+    mode === DisplayMode.STATIC ||
+    mode === DisplayMode.LASER ||
+    mode === DisplayMode.CURTAIN
+  );
+}
+
+// Helper to apply device-style centering
+function applyDeviceCentering(pixels) {
+  const rightmost = findRightmostPixel(pixels);
+  if (rightmost === -1) return pixels; // No pixels to center
+
+  // Calculate how many pixels of space are on the right
+  const rightSpace = SCREEN_WIDTH - 1 - rightmost;
+
+  // Calculate how many pixels to shift right (half the space)
+  const shift = Math.floor(rightSpace / 2);
+  if (shift <= 0) return pixels;
+
+  // Create new array with shifted content
+  return pixels.map((row) => {
+    const newRow = Array(SCREEN_WIDTH).fill(false);
+    row.forEach((pixel, x) => {
+      if (pixel && x + shift < SCREEN_WIDTH) {
+        newRow[x + shift] = true;
+      }
+    });
+    return newRow;
+  });
+}
+
 export const currentFrame = computed(() => {
   // Use preview state if available
   const state = previewState.value || currentBankData.value;
 
-  // If blinking and in hidden state, return empty frame
-  if (state.blink && previewState.value?.blinkState === false) {
-    return Array(SCREEN_HEIGHT)
-      .fill()
-      .map(() => Array(SCREEN_WIDTH).fill(false));
-  }
+  let frame;
 
   if (state.mode === DisplayMode.LASER && previewState.value) {
-    const {
-      laserPhase,
-      laserX,
-      targetX,
-      activePixels,
-      leftmostPixel,
-      isCleanup,
-    } = previewState.value;
-    return createLaserFrame(
+    frame = createLaserFrame(
       state.pixels,
-      laserX,
-      targetX,
-      activePixels,
-      leftmostPixel,
-      isCleanup
+      previewState.value.laserX,
+      previewState.value.targetX,
+      previewState.value.activePixels,
+      previewState.value.leftmostPixel,
+      previewState.value.isCleanup
     );
-  }
-
-  if (state.mode === DisplayMode.CURTAIN && previewState.value) {
-    const { curtainPhase, curtainPos } = previewState.value;
-    return createCurtainFrame(
+  } else if (state.mode === DisplayMode.CURTAIN && previewState.value) {
+    frame = createCurtainFrame(
       state.pixels,
-      curtainPos,
-      curtainPhase === "closing"
+      previewState.value.curtainPos,
+      previewState.value.curtainPhase === "closing"
     );
-  }
-
-  if (
+  } else if (
     state.mode === DisplayMode.SCROLL_UP ||
     state.mode === DisplayMode.SCROLL_DOWN
   ) {
     // For vertical scrolling, take a slice of rows
     // Handle negative viewport by showing blank rows
     const viewport = Math.max(0, state.viewport);
-    return state.pixels
+    frame = state.pixels
       .slice(viewport, viewport + 11)
       .map((row) => row.slice(0, 44));
+  } else {
+    // For horizontal modes
+    const start =
+      state.mode === DisplayMode.ANIMATION
+        ? state.currentFrame * 44
+        : state.viewport;
+    const end = start + 44;
+    frame = state.pixels.map((row) => {
+      if (start < 0) {
+        // Handle negative viewport by showing blank columns
+        const visible = row.slice(0, Math.max(0, end));
+        return [...Array(Math.min(44, -start)).fill(false), ...visible];
+      }
+      if (start >= row.length) {
+        return Array(44).fill(false);
+      }
+      if (end > row.length) {
+        return [...row.slice(start), ...Array(end - row.length).fill(false)];
+      }
+      return row.slice(start, end);
+    });
   }
 
-  // For horizontal modes
-  const start =
-    state.mode === DisplayMode.ANIMATION
-      ? state.currentFrame * 44
-      : state.viewport;
-  const end = start + 44;
-  return state.pixels.map((row) => {
-    if (start < 0) {
-      // Handle negative viewport by showing blank columns
-      const visible = row.slice(0, Math.max(0, end));
-      return [...Array(Math.min(44, -start)).fill(false), ...visible];
-    }
-    if (start >= row.length) {
-      return Array(44).fill(false);
-    }
-    if (end > row.length) {
-      return [...row.slice(start), ...Array(end - row.length).fill(false)];
-    }
-    return row.slice(start, end);
-  });
-});
+  // Apply device-style centering for non-scrolling modes
+  if (shouldDeviceCenter(state.mode)) {
+    frame = applyDeviceCentering(frame);
+  }
 
-// Helper to determine if text should be centered based on mode
-function shouldCenterText(mode) {
-  return mode !== DisplayMode.SCROLL_LEFT && mode !== DisplayMode.SCROLL_RIGHT;
-}
+  // Apply post-processing effects
+  const effectState = {
+    blink: state.blink,
+    blinkState: previewState.value?.blinkState ?? blinkState.value,
+    ants: currentBankData.value.ants,
+  };
+  return applyEffects(frame, effectState);
+});
 
 // Actions
 export function togglePixel(x, y) {
@@ -183,7 +218,8 @@ export function setText(text) {
 
   data.text = text;
   const font = data.font || fonts.value[0];
-  data.pixels = textToPixels(text, font, shouldCenterText(data.mode));
+  // Don't center text - let device centering handle it
+  data.pixels = textToPixels(text, font, false);
 
   // If pixels array is empty or undefined, create a default one
   if (!data.pixels || !data.pixels.length) {

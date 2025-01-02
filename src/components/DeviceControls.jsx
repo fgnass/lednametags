@@ -1,47 +1,43 @@
 import { signal } from "@preact/signals";
 import { sync } from "../device";
 import { Button } from "./Button";
-import { Loader2, Usb } from "lucide-preact";
+import { Loader2, Upload } from "lucide-preact";
+import { toast } from "./ToastMessage";
 
 const isSyncing = signal(false);
-const syncError = signal(null);
 
 export default function DeviceControls() {
   const handleSync = async () => {
     isSyncing.value = true;
-    syncError.value = null;
 
     try {
       const result = await sync();
-      if (!result.success) {
-        syncError.value = result.error;
+      if (result.success) {
+        toast.show("Configuration uploaded successfully");
+      } else {
+        toast.show(result.error || "Failed to upload configuration", "error");
       }
     } catch (error) {
-      syncError.value = error.message || "Unknown error occurred";
+      toast.show(error.message || "Unknown error occurred", "error");
     } finally {
       isSyncing.value = false;
     }
   };
 
   return (
-    <div class="flex items-center gap-2">
-      <Button
-        onClick={handleSync}
-        disabled={isSyncing.value}
-        class="min-w-[100px] justify-center"
-      >
-        {isSyncing.value ? (
-          <Loader2 class="animate-spin" />
-        ) : (
-          <>
-            <Usb />
-            Sync
-          </>
-        )}
-      </Button>
-      {syncError.value && (
-        <div class="text-sm text-red-500">{syncError.value}</div>
+    <Button
+      onClick={handleSync}
+      disabled={isSyncing.value}
+      title="Upload to device"
+    >
+      {isSyncing.value ? (
+        <Loader2 class="animate-spin" />
+      ) : (
+        <>
+          <Upload />
+          Sync
+        </>
       )}
-    </div>
+    </Button>
   );
 }

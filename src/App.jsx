@@ -10,6 +10,7 @@ import NavigationControls from "./components/NavigationControls";
 import EditPanel from "./components/EditPanel";
 import PlaybackControls from "./components/PlaybackControls";
 import ShareButton from "./components/ShareButton";
+import ToastMessage, { toast } from "./components/ToastMessage";
 
 export default function App() {
   useEffect(() => {
@@ -29,8 +30,11 @@ export default function App() {
           // Remove state param from URL
           url.searchParams.delete("state");
           window.history.replaceState({}, "", url);
+
+          toast.show("Configuration loaded successfully");
         } else {
           console.error("Failed to load shared state:", error);
+          toast.show(error || "Failed to load shared configuration", "error");
         }
       });
     }
@@ -39,6 +43,7 @@ export default function App() {
   return (
     <div class="min-h-screen bg-gray-900 text-white p-8 flex">
       <div class="mx-auto flex flex-col space-y-8">
+        <ToastMessage />
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-4">
             <BankSelector />
