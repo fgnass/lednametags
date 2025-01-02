@@ -1,12 +1,17 @@
-import { DisplayMode, PACKET_SIZE } from "./constants";
+import {
+  DisplayMode,
+  PACKET_SIZE,
+  SCREEN_WIDTH,
+  SCREEN_HEIGHT,
+} from "./constants";
 
 // Convert pixel data to device format (column-wise bytes)
 export function framesToDeviceFormat(bank) {
   if (bank.mode === DisplayMode.ANIMATION) {
-    // Animation mode: Split into 44-pixel wide frames
-    const frameWidth = 44;
+    // Animation mode: Split into SCREEN_WIDTH-pixel wide frames
+    const frameWidth = SCREEN_WIDTH;
     const numFrames = Math.ceil(bank.pixels[0].length / frameWidth);
-    const bytesPerFrame = 6 * 11; // 6 bytes × 11 rows
+    const bytesPerFrame = 6 * SCREEN_HEIGHT; // 6 bytes × SCREEN_HEIGHT rows
     const totalBytes = numFrames * bytesPerFrame;
     const data = new Uint8Array(totalBytes).fill(0);
 
@@ -18,7 +23,7 @@ export function framesToDeviceFormat(bank) {
       // Process each column in this frame
       for (let col = 0; col < 6; col++) {
         // Process each row in this column
-        for (let y = 0; y < 11; y++) {
+        for (let y = 0; y < SCREEN_HEIGHT; y++) {
           let byte = 0;
           // Pack 8 horizontal pixels into one byte
           for (let bit = 0; bit < 8; bit++) {
@@ -28,7 +33,7 @@ export function framesToDeviceFormat(bank) {
             }
           }
           // Store byte in column-major format
-          data[frameByteStart + col * 11 + y] = byte;
+          data[frameByteStart + col * SCREEN_HEIGHT + y] = byte;
         }
       }
     }
@@ -37,12 +42,12 @@ export function framesToDeviceFormat(bank) {
     // Other modes: Pack pixels into columns
     // Calculate number of byte-columns needed (8 pixels per byte)
     const numCols = Math.ceil(bank.pixels[0].length / 8);
-    const data = new Uint8Array(numCols * 11).fill(0);
+    const data = new Uint8Array(numCols * SCREEN_HEIGHT).fill(0);
 
     // Process each byte-column
     for (let col = 0; col < numCols; col++) {
       // Process each row in this column
-      for (let y = 0; y < 11; y++) {
+      for (let y = 0; y < SCREEN_HEIGHT; y++) {
         let byte = 0;
         // Pack 8 horizontal pixels into one byte
         for (let bit = 0; bit < 8; bit++) {
@@ -51,8 +56,8 @@ export function framesToDeviceFormat(bank) {
             byte |= 1 << (7 - bit);
           }
         }
-        // Store byte in column-major format (11 bytes per column)
-        data[col * 11 + y] = byte;
+        // Store byte in column-major format (SCREEN_HEIGHT bytes per column)
+        data[col * SCREEN_HEIGHT + y] = byte;
       }
     }
     return data;
@@ -168,8 +173,8 @@ export function calculateBankMemory(bank) {
   // Calculate number of 8-pixel columns needed
   const columns = Math.ceil((maxX + 1) / 8);
 
-  // Each column needs 11 bytes (one byte per row)
-  bytes += columns * 11;
+  // Each column needs SCREEN_HEIGHT bytes (one byte per row)
+  bytes += columns * SCREEN_HEIGHT;
 
   return bytes;
 }

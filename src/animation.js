@@ -1,5 +1,12 @@
 import { computed, signal } from "@preact/signals";
-import { currentBank, banks, currentBankData, bankHasData } from "./store";
+import {
+  currentBank,
+  banks,
+  currentBankData,
+  bankHasData,
+  shouldDeviceCenter,
+  applyDeviceCentering,
+} from "./store";
 import {
   DisplayMode,
   SPEED_FPS,
@@ -244,7 +251,7 @@ export function createCurtainFrame(content, curtainPos, isClosing = false) {
 export const frameCount = computed(() => {
   const bank = currentBankData.value;
   if (bank.mode !== DisplayMode.ANIMATION) return 1;
-  return Math.ceil(bank.pixels[0].length / 44);
+  return Math.ceil(bank.pixels[0].length / SCREEN_WIDTH);
 });
 
 // Helper to find the rightmost column containing pixels
@@ -655,29 +662,70 @@ export const currentFrame = computed(() => {
     // Handle negative viewport by showing blank rows
     const viewport = Math.max(0, state.viewport);
     frame = state.pixels
-      .slice(viewport, viewport + 11)
-      .map((row) => row.slice(0, 44));
+      .slice(viewport, viewport + SCREEN_HEIGHT)
+      .map((row) => {
+        // Always ensure each row has exactly SCREEN_WIDTH pixels
+        const paddedRow = row.slice(0, SCREEN_WIDTH);
+        if (paddedRow.length < SCREEN_WIDTH) {
+          return [
+            ...paddedRow,
+            ...Array(SCREEN_WIDTH - paddedRow.length).fill(false),
+          ];
+        }
+        return paddedRow;
+      });
+
+    // If we don't have enough rows, pad with blank rows
+    if (frame.length < SCREEN_HEIGHT) {
+      const blankRow = Array(SCREEN_WIDTH).fill(false);
+      while (frame.length < SCREEN_HEIGHT) {
+        frame.push([...blankRow]);
+      }
+    }
   } else {
     // For horizontal modes
     const start =
       state.mode === DisplayMode.ANIMATION
-        ? state.currentFrame * 44
+        ? state.currentFrame * SCREEN_WIDTH
         : state.viewport;
-    const end = start + 44;
+    const end = start + SCREEN_WIDTH;
     frame = state.pixels.map((row) => {
       if (start < 0) {
         // Handle negative viewport by showing blank columns
         const visible = row.slice(0, Math.max(0, end));
-        return [...Array(Math.min(44, -start)).fill(false), ...visible];
+        // Always ensure we return exactly SCREEN_WIDTH pixels
+        const padding = SCREEN_WIDTH - visible.length;
+        return [
+          ...Array(Math.min(SCREEN_WIDTH, -start)).fill(false),
+          ...visible,
+          ...Array(Math.max(0, padding - Math.min(SCREEN_WIDTH, -start))).fill(
+            false
+          ),
+        ];
       }
       if (start >= row.length) {
-        return Array(44).fill(false);
+        return Array(SCREEN_WIDTH).fill(false);
       }
       if (end > row.length) {
-        return [...row.slice(start), ...Array(end - row.length).fill(false)];
+        const visible = row.slice(start);
+        // Always ensure we return exactly SCREEN_WIDTH pixels
+        return [
+          ...visible,
+          ...Array(SCREEN_WIDTH - visible.length).fill(false),
+        ];
       }
-      return row.slice(start, end);
+      const slice = row.slice(start, end);
+      // Ensure we always return exactly SCREEN_WIDTH pixels
+      if (slice.length < SCREEN_WIDTH) {
+        return [...slice, ...Array(SCREEN_WIDTH - slice.length).fill(false)];
+      }
+      return slice;
     });
+  }
+
+  // Apply device-style centering for non-scrolling modes
+  if (shouldDeviceCenter(state.mode)) {
+    frame = applyDeviceCentering(frame);
   }
 
   // Apply post-processing effects

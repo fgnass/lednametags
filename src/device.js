@@ -1,4 +1,4 @@
-import { VENDOR_ID, PRODUCT_ID, PACKET_SIZE } from "./constants";
+import { VENDOR_ID, PRODUCT_ID, PACKET_SIZE, SCREEN_HEIGHT } from "./constants";
 import { isConnected, banks } from "./store";
 import { createHeader, framesToDeviceFormat } from "./utils";
 
@@ -82,7 +82,7 @@ export async function uploadToDevice() {
       if (bank.pixels.some((row) => row.some((pixel) => pixel))) {
         const data = framesToDeviceFormat(bank);
         bankData.push(data);
-        const numCols = data.length / 11;
+        const numCols = data.length / SCREEN_HEIGHT;
         lengths[i] = numCols;
         modes[i] = bank.mode;
         speeds[i] = bank.speed;

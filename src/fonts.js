@@ -334,7 +334,7 @@ export function setFont(fontName) {
   renderTestChar(fontName);
 }
 
-export function textToPixels(text, fontName, center = false) {
+export function textToPixels(text, fontName) {
   if (!text) {
     currentChar.value = "X";
     return Array(SCREEN_HEIGHT)
@@ -349,34 +349,15 @@ export function textToPixels(text, fontName, center = false) {
   // Calculate total width with 1px gaps between chars
   const totalWidth = chars.reduce((sum, char) => sum + char.width + 1, 0) - 1;
 
-  // In scroll mode, use full width. In centered mode, use screen width
-  const resultWidth = center ? SCREEN_WIDTH : totalWidth;
   const result = Array(SCREEN_HEIGHT)
     .fill()
-    .map(() => Array(resultWidth).fill(false));
+    .map(() => Array(totalWidth).fill(false));
 
-  // For centered text, first calculate how many chars will fit
   let fittingWidth = 0;
   let fittingChars = 0;
-  let width = 0;
-
-  if (center) {
-    for (const char of chars) {
-      width += char.width + 1;
-      if (width - 1 <= SCREEN_WIDTH) {
-        fittingWidth = width - 1;
-        fittingChars++;
-      } else {
-        break;
-      }
-    }
-  } else {
-    fittingChars = chars.length;
-    fittingWidth = totalWidth;
-  }
-
-  // Center the text if requested
-  let xOffset = center ? Math.floor((SCREEN_WIDTH - fittingWidth) / 2) : 0;
+  fittingChars = chars.length;
+  fittingWidth = totalWidth;
+  let xOffset = 0;
 
   for (let i = 0; i < fittingChars; i++) {
     const char = chars[i];
@@ -397,7 +378,7 @@ export function textToPixels(text, fontName, center = false) {
       y < char.pixels.length && y + yOffset < SCREEN_HEIGHT;
       y++
     ) {
-      for (let x = 0; x < char.width && xOffset + x < resultWidth; x++) {
+      for (let x = 0; x < char.width && xOffset + x < totalWidth; x++) {
         if (y + yOffset >= 0 && y + yOffset < SCREEN_HEIGHT) {
           result[y + yOffset][xOffset + x] = char.pixels[y][x];
         }
